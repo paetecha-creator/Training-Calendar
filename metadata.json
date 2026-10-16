@@ -1,0 +1,8 @@
+{
+  "name": "Monthly Training Calendar",
+  "description": "ระบบแชร์แผนงานอบรมขององค์กร พร้อมระบบลงทะเบียนและแดชบอร์ดติดตามสถานะแบบเรียลไทม์ เชื่อมต่อ Google Sheets",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
