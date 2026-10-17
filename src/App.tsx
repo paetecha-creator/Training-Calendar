@@ -89,9 +89,18 @@ export default function App() {
     [accessToken]
   );
 
-  // Initialize Firebase Auth & Load initial events
+  // Continuous sync: Fetch on mount, poll every 25 seconds, and sync on window focus
   useEffect(() => {
-    loadEvents(null);
+    loadEvents(accessToken);
+
+    const intervalId = setInterval(() => {
+      loadEvents(accessToken);
+    }, 25000);
+
+    const handleFocus = () => {
+      loadEvents(accessToken);
+    };
+    window.addEventListener('focus', handleFocus);
 
     const unsubscribe = initAuth(
       (authUser, token) => {
@@ -107,9 +116,11 @@ export default function App() {
     );
 
     return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
       unsubscribe();
     };
-  }, []);
+  }, [loadEvents, accessToken]);
 
   // Category Toggle
   const toggleCategory = (cat: string) => {
@@ -285,7 +296,7 @@ export default function App() {
   }, [events]);
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#e0e5ec] text-[#3b4252]">
+    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#eef2f6] text-slate-800">
       {/* Top Navbar: Full-width */}
       <Header
         currentDate={currentDate}
@@ -307,15 +318,15 @@ export default function App() {
 
       {/* Sync Status Banner (Only visible to Admin) */}
       {isAdmin && syncStatus && (
-        <div className="mx-3 mt-1.5 px-4 py-2 text-xs font-semibold flex items-center justify-between rounded-xl neu-inset shrink-0 text-[#3b4252]">
+        <div className="mx-3 mt-1.5 px-4 py-2 text-xs font-semibold flex items-center justify-between rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200/80 shrink-0">
           <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-[#5e81ac] shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               <span>{syncStatus.text}</span>
             </div>
             <button
               onClick={() => setSyncStatus(null)}
-              className="text-[#7b889b] hover:text-[#2e3440] ml-2 cursor-pointer p-0.5"
+              className="text-emerald-600 hover:text-emerald-900 ml-2 cursor-pointer p-0.5 transition-colors"
             >
               <X className="w-3.5 h-3.5" />
             </button>

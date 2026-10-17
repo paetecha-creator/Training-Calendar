@@ -283,7 +283,100 @@ export function checkAndCloseExpiredCourses(events: TrainingEvent[]): TrainingEv
 }
 
 /**
- * 1. Fetch Events from Google Sheets API v4 (if authenticated) or Local Cache
+ * Dynamic JSONP / Fetch loader for public Google Sheets GViz endpoint.
+ * Allows ALL visitors to read real-time data from spreadsheet 1gqp55Bp-HyDihtbHQGpyeVglHAXCQwXTxnefK8xVozs
+ * without needing Google login or OAuth credentials.
+ */
+export async function fetchSheetGvizData(sheetName: string): Promise<any> {
+  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
+    return new Promise((resolve, reject) => {
+      const callbackName = 'gviz_cb_' + Math.random().toString(36).substring(2, 9);
+      let resolved = false;
+
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Timeout fetching ${sheetName} from Google Sheets`));
+      }, 12000);
+
+      function cleanup() {
+        clearTimeout(timer);
+        if (script && script.parentNode) {
+          script.parentNode.removeChild(script);
+        }
+        delete (window as any)[callbackName];
+      }
+
+      (window as any)[callbackName] = (data: any) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        resolve(data);
+      };
+
+      const script = document.createElement('script');
+      script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&sheet=${encodeURIComponent(
+        sheetName
+      )}&t=${Date.now()}`;
+      script.onerror = (err) => {
+        if (resolved) return;
+        resolved = true;
+        cleanup();
+        reject(err);
+      };
+
+      document.head.appendChild(script);
+    });
+  }
+
+  // Node.js fallback
+  const res = await fetch(
+    `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
+      sheetName
+    )}&t=${Date.now()}`
+  );
+  const text = await res.text();
+  const jsonText = text.replace(/^[^{]*/, '').replace(/[^}]*$/, '');
+  return JSON.parse(jsonText);
+}
+
+export function parseGvizDate(cell: any): string {
+  if (!cell) return '';
+  if (cell.f && /^\d{4}-\d{2}-\d{2}$/.test(cell.f)) {
+    return cell.f;
+  }
+  if (typeof cell.v === 'string') {
+    const match = cell.v.match(/Date\((\d+),(\d+),(\d+)/);
+    if (match) {
+      const year = match[1];
+      const month = String(Number(match[2]) + 1).padStart(2, '0');
+      const day = String(Number(match[3])).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(cell.v)) {
+      return cell.v;
+    }
+  }
+  return parseIsoDateToBangkok(cell.f || cell.v);
+}
+
+export function parseGvizTime(cell: any): string {
+  if (!cell) return '';
+  const raw = cell.f || (typeof cell.v === 'string' ? cell.v : '');
+  if (raw) {
+    const match = raw.match(/Date\(\d+,\d+,\d+,(\d+),(\d+)/);
+    if (match) {
+      return `${match[1].padStart(2, '0')}:${match[2].padStart(2, '0')}`;
+    }
+    const parts = raw.trim().split(':');
+    if (parts.length >= 2) {
+      return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
+    }
+  }
+  return parseIsoTimeToBangkok(cell.f || cell.v);
+}
+
+/**
+ * 1. Fetch Events from Google Sheets (Real-time public GViz + OAuth API v4 fallback)
  */
 export async function getEventsFromSheet(accessToken?: string | null): Promise<{
   events: TrainingEvent[];
@@ -291,6 +384,7 @@ export async function getEventsFromSheet(accessToken?: string | null): Promise<{
   error?: string;
 }> {
   let masterEvents: TrainingEvent[] = [];
+  let holidayEvents: TrainingEvent[] = [];
   let source: 'google-sheets' | 'local-cache' = 'local-cache';
   let fetchError: string | undefined;
 
@@ -343,42 +437,128 @@ export async function getEventsFromSheet(accessToken?: string | null): Promise<{
             isEvent: true,
           });
         }
+      }
+    } catch (e: unknown) {
+      console.warn('Sheets API v4 error, falling back to public GViz:', e);
+    }
+  }
+
+  // B. Public Google Sheets GViz endpoint: Always connect and fetch live data for all visitors
+  if (masterEvents.length === 0) {
+    try {
+      const gvizData = await fetchSheetGvizData('Master');
+      if (gvizData?.table?.rows) {
+        for (const row of gvizData.table.rows) {
+          const c = row.c || [];
+          const eventId = c[0]?.v ? String(c[0].v).trim() : '';
+          const title = c[2]?.v ? String(c[2].v).trim() : '';
+          if (!eventId || !title) continue;
+
+          const category = (c[1]?.v ? String(c[1].v).trim() : '') || 'Other';
+          const startDate = parseGvizDate(c[3]);
+          const endDate = parseGvizDate(c[4]) || startDate;
+          const startTime = parseGvizTime(c[5]);
+          const endTime = parseGvizTime(c[6]);
+          const location = c[7]?.v ? String(c[7].v).trim() : '';
+          const description = c[8]?.v ? String(c[8].v).trim() : '';
+          const bgColor =
+            (c[9]?.v ? String(c[9].v).trim() : '') ||
+            CATEGORY_COLORS[category as TrainingCategory] ||
+            '#EAEAEA';
+          const status = (c[10]?.v ? String(c[10].v).trim() : '') || 'ไม่ต้องลงทะเบียน';
+          const openDate = parseGvizDate(c[11]);
+          const closeDate = parseGvizDate(c[12]);
+          const formSheet = c[13]?.v ? String(c[13].v).trim() : '';
+
+          masterEvents.push({
+            id: eventId,
+            category,
+            title,
+            start: startDate,
+            end: endDate,
+            startTime,
+            endTime,
+            location,
+            description,
+            color: bgColor,
+            textColor: getContrastColor(bgColor),
+            status,
+            openDate,
+            closeDate,
+            formSheet,
+            isEvent: true,
+          });
+        }
 
         if (masterEvents.length > 0) {
           source = 'google-sheets';
         }
-      } else {
-        fetchError = `Sheets API error: ${resMaster.status}`;
       }
-    } catch (e: unknown) {
-      console.warn('Sheets API v4 error:', e);
-      fetchError = (e as Error).message;
+    } catch (err: unknown) {
+      console.warn('Public Google Sheets GViz fetch error:', err);
+      fetchError = (err as Error).message;
     }
   }
 
-  // B. Fallback to local cache if no accessToken or remote fetch returned no events
+  // C. Fetch real holidays from the Holiday sheet in Google Sheets!
+  try {
+    const holidayData = await fetchSheetGvizData('Holiday');
+    if (holidayData?.table?.rows) {
+      holidayData.table.rows.forEach((r: any, idx: number) => {
+        const c = r.c || [];
+        const hDate = parseGvizDate(c[0]);
+        const hTitle = c[1]?.v ? String(c[1].v).trim() : '';
+        if (hDate && hTitle) {
+          holidayEvents.push({
+            id: `HOL-${idx}`,
+            category: 'Other',
+            title: hTitle,
+            start: hDate,
+            end: hDate,
+            startTime: '',
+            endTime: '',
+            location: '',
+            description: 'วันหยุดบริษัท / วันหยุดนักขัตฤกษ์',
+            color: 'transparent',
+            textColor: '#ef4444',
+            status: 'ไม่ต้องลงทะเบียน',
+            isEvent: false,
+            isHoliday: true,
+          });
+        }
+      });
+    }
+  } catch (err) {
+    console.warn('Could not fetch Holiday sheet, using fallback list', err);
+  }
+
+  // Fallback to default official holidays list if Holiday sheet returned nothing
+  if (holidayEvents.length === 0) {
+    holidayEvents = OFFICIAL_HOLIDAYS.map((h, idx) => ({
+      id: `HOL-${idx}`,
+      category: 'Other',
+      title: h.title,
+      start: h.date,
+      end: h.date,
+      startTime: '',
+      endTime: '',
+      location: '',
+      description: 'วันหยุดนักขัตฤกษ์ / วันหยุดราชการ',
+      color: 'transparent',
+      textColor: '#ef4444',
+      status: 'ไม่ต้องลงทะเบียน',
+      isEvent: false,
+      isHoliday: true,
+    }));
+  }
+
+  // D. Fallback to local cache only if Google Sheets was completely unreachable
   if (masterEvents.length === 0) {
     masterEvents = getLocalEvents().filter((e) => e.isEvent);
     source = 'local-cache';
+  } else {
+    source = 'google-sheets';
   }
-
-  // D. Build official holiday list
-  const holidayEvents: TrainingEvent[] = OFFICIAL_HOLIDAYS.map((h, idx) => ({
-    id: `HOL-${idx}`,
-    category: 'Other',
-    title: h.title,
-    start: h.date,
-    end: h.date,
-    startTime: '',
-    endTime: '',
-    location: '',
-    description: 'วันหยุดนักขัตฤกษ์ / วันหยุดราชการ',
-    color: 'transparent',
-    textColor: '#ef4444',
-    status: 'ไม่ต้องลงทะเบียน',
-    isEvent: false,
-    isHoliday: true,
-  }));
 
   const combined = [...masterEvents, ...holidayEvents];
   const finalEvents = checkAndCloseExpiredCourses(combined);
@@ -649,53 +829,88 @@ export async function getRegistrationAttendees(
   sheetName: string,
   accessToken?: string | null
 ): Promise<{ attendees: AttendeeRow[]; error?: string }> {
-  if (!accessToken) {
-    return { attendees: getLocalAttendees(sheetName) };
-  }
-
-  try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (!res.ok) {
-      return { attendees: getLocalAttendees(sheetName) };
-    }
-
-    const data = await res.json();
-    const rows = data.values || [];
-    const attendees: AttendeeRow[] = [];
-
-    for (let i = 0; i < rows.length; i++) {
-      const cols = rows[i];
-      const code = cols[1] || cols[0];
-      const fname = cols[3] || cols[2];
-      if (!code && !fname) continue;
-
-      attendees.push({
-        code: cols[1] || '',
-        sex: (cols[2] as 'Mr.' | 'Ms.' | 'Mrs.') || 'Mr.',
-        fname: cols[3] || '',
-        lname: cols[4] || '',
-        dept: cols[5] || '',
-        pos: cols[6] || '',
-        exp: cols[7] || '',
-        app: cols[8] || '',
-        rem: cols[9] || '',
-        submitterName: cols[10] || '',
-        submitterDept: cols[11] || '',
-        submitterPhone: cols[12] || '',
-        rowIndex: 5 + i,
+  // If accessToken is available, try Sheets API v4 first
+  if (accessToken) {
+    try {
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
-    }
 
-    saveLocalAttendees(sheetName, attendees);
-    return { attendees };
-  } catch (err: unknown) {
-    console.error('Error fetching attendees:', err);
-    return { attendees: getLocalAttendees(sheetName), error: (err as Error).message };
+      if (res.ok) {
+        const data = await res.json();
+        const rows = data.values || [];
+        const attendees: AttendeeRow[] = [];
+
+        for (let i = 0; i < rows.length; i++) {
+          const cols = rows[i];
+          const code = cols[1] || cols[0];
+          const fname = cols[3] || cols[2];
+          if (!code && !fname) continue;
+
+          attendees.push({
+            code: cols[1] || '',
+            sex: (cols[2] as 'Mr.' | 'Ms.' | 'Mrs.') || 'Mr.',
+            fname: cols[3] || '',
+            lname: cols[4] || '',
+            dept: cols[5] || '',
+            pos: cols[6] || '',
+            exp: cols[7] || '',
+            app: cols[8] || '',
+            rem: cols[9] || '',
+            submitterName: cols[10] || '',
+            submitterDept: cols[11] || '',
+            submitterPhone: cols[12] || '',
+            rowIndex: 5 + i,
+          });
+        }
+
+        saveLocalAttendees(sheetName, attendees);
+        return { attendees };
+      }
+    } catch (err: unknown) {
+      console.warn('Sheets API v4 error for attendees, falling back to public GViz:', err);
+    }
   }
+
+  // Public Google Sheets GViz fetch so all users see the real-time attendees from the same sheet
+  try {
+    const gvizData = await fetchSheetGvizData(sheetName);
+    if (gvizData?.table?.rows) {
+      const attendees: AttendeeRow[] = [];
+      gvizData.table.rows.forEach((r: any, i: number) => {
+        const c = r.c || [];
+        const code = c[1]?.v ? String(c[1].v).trim() : (c[0]?.v ? String(c[0].v).trim() : '');
+        const fname = c[3]?.v ? String(c[3].v).trim() : (c[2]?.v ? String(c[2].v).trim() : '');
+        if (!code && !fname) return;
+
+        attendees.push({
+          code: c[1]?.v ? String(c[1].v) : '',
+          sex: (c[2]?.v as 'Mr.' | 'Ms.' | 'Mrs.') || 'Mr.',
+          fname: c[3]?.v ? String(c[3].v) : '',
+          lname: c[4]?.v ? String(c[4].v) : '',
+          dept: c[5]?.v ? String(c[5].v) : '',
+          pos: c[6]?.v ? String(c[6].v) : '',
+          exp: c[7]?.v ? String(c[7].v) : '',
+          app: c[8]?.v ? String(c[8].v) : '',
+          rem: c[9]?.v ? String(c[9].v) : '',
+          submitterName: c[10]?.v ? String(c[10].v) : '',
+          submitterDept: c[11]?.v ? String(c[11].v) : '',
+          submitterPhone: c[12]?.v ? String(c[12].v) : '',
+          rowIndex: 5 + i,
+        });
+      });
+
+      if (attendees.length > 0) {
+        saveLocalAttendees(sheetName, attendees);
+        return { attendees };
+      }
+    }
+  } catch (err: unknown) {
+    console.warn('Public GViz fetch error for attendees:', err);
+  }
+
+  return { attendees: getLocalAttendees(sheetName) };
 }
 
 // 6. Clear Registration Data

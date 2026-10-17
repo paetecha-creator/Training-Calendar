@@ -18,30 +18,30 @@ export const SelectCourseModal: React.FC<SelectCourseModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2e3440]/30 backdrop-blur-xs">
-      <div className="neu-card rounded-3xl w-full max-w-md overflow-hidden flex flex-col bg-[#e0e5ec]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+      <div className="rounded-2xl w-full max-w-md overflow-hidden flex flex-col bg-white border border-slate-200 shadow-2xl">
         {/* Header */}
-        <div className="p-5 flex items-center justify-between neu-card-sm bg-[#e0e5ec]">
+        <div className="p-5 flex items-center justify-between bg-slate-50/80 border-b border-slate-200">
           <div>
-            <h3 className="text-base font-black text-[#2e3440] tracking-tight">
+            <h3 className="text-base font-bold text-slate-900 tracking-tight">
               เลือกหลักสูตรที่ต้องการลงทะเบียน
             </h3>
-            <p className="text-xs text-[#7b889b] font-medium mt-0.5">
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
               หลักสูตรที่เปิดรับลงทะเบียนในขณะนี้ ({openCourses.length} หลักสูตร)
             </p>
           </div>
           <button
             onClick={onClose}
-            className="neu-btn p-2 rounded-xl text-[#7b889b] hover:text-rose-500 cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 cursor-pointer transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Course List */}
-        <div className="p-4 space-y-3 max-h-[60vh] overflow-y-auto">
+        <div className="p-4 space-y-2.5 max-h-[60vh] overflow-y-auto">
           {openCourses.length === 0 ? (
-            <div className="text-center py-8 text-[#7b889b] text-xs font-semibold">
+            <div className="text-center py-8 text-slate-400 text-xs font-semibold">
               ยังไม่มีหลักสูตรที่เปิดรับลงทะเบียนในขณะนี้
             </div>
           ) : (
@@ -52,27 +52,27 @@ export const SelectCourseModal: React.FC<SelectCourseModalProps> = ({
                   onSelectCourse(c);
                   onClose();
                 }}
-                className="w-full text-left p-3.5 rounded-2xl neu-card-sm hover:scale-[1.01] active:scale-95 transition-all flex items-center justify-between group cursor-pointer bg-[#e0e5ec]"
+                className="w-full text-left p-3.5 rounded-xl border border-slate-200/80 bg-white hover:border-[#1e3a8a]/40 hover:shadow-xs hover:bg-slate-50/50 transition-all flex items-center justify-between group cursor-pointer"
               >
                 <div className="min-w-0 pr-2">
                   <span
-                    className="text-[10px] font-black px-2.5 py-0.5 rounded-lg inline-block mb-1 shadow-2xs"
-                    style={{ backgroundColor: c.color, color: c.textColor || '#2e3440' }}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-md inline-block mb-1 border border-black/5"
+                    style={{ backgroundColor: c.color, color: c.textColor || '#0f172a' }}
                   >
                     {c.category}
                   </span>
-                  <h4 className="text-xs font-black text-[#2e3440] group-hover:text-[#5e81ac] transition-colors truncate">
+                  <h4 className="text-xs font-bold text-slate-900 group-hover:text-[#1e3a8a] transition-colors truncate">
                     {c.title}
                   </h4>
-                  <div className="flex items-center gap-2 text-[11px] text-[#7b889b] mt-1 font-semibold">
+                  <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-1 font-medium">
                     <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3 text-[#5e81ac]" />
+                      <Calendar className="w-3 h-3 text-[#1e3a8a]" />
                       {c.start}
                     </span>
                   </div>
                 </div>
 
-                <div className="w-8 h-8 rounded-xl neu-inset-sm flex items-center justify-center text-[#5e81ac] shrink-0 group-hover:scale-105 transition-all">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200/70 flex items-center justify-center text-[#1e3a8a] shrink-0 group-hover:bg-[#1e3a8a] group-hover:text-white transition-all">
                   <ChevronRight className="w-4 h-4" />
                 </div>
               </button>

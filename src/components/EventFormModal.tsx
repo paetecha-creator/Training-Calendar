@@ -103,19 +103,19 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#2e3440]/30 backdrop-blur-xs">
-      <div className="neu-card rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col bg-[#e0e5ec]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+      <div className="rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden flex flex-col bg-white border border-slate-200 shadow-2xl">
         {/* Header */}
-        <div className="p-5 flex items-center justify-between neu-card-sm bg-[#e0e5ec]">
+        <div className="p-5 flex items-center justify-between bg-slate-50/80 border-b border-slate-200">
           <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-[#5e81ac]" />
-            <h3 className="text-base md:text-lg font-black text-[#2e3440] tracking-tight">
+            <Calendar className="w-5 h-5 text-[#1e3a8a]" />
+            <h3 className="text-base md:text-lg font-bold text-slate-900 tracking-tight">
               {event ? 'แก้ไขแผนงานอบรม (Edit Course)' : 'เพิ่มแผนงานอบรมใหม่ (Add Course)'}
             </h3>
           </div>
           <button
             onClick={onClose}
-            className="neu-btn p-2 rounded-xl text-[#7b889b] hover:text-rose-500 cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 cursor-pointer transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
@@ -126,13 +126,13 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
           {/* Category & Color */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                 หมวดหมู่ (Category)
               </label>
               <select
                 value={category}
                 onChange={(e) => handleCategoryChange(e.target.value as TrainingCategory)}
-                className="w-full text-xs font-semibold p-2.5 neu-input rounded-xl"
+                className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
               >
                 <option value="Soft Skill Training">Soft Skill Training</option>
                 <option value="Technical Skills Training">Technical Skills Training</option>
@@ -143,7 +143,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
             </div>
 
             <div>
-              <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                 สีประจำหลักสูตร (Color)
               </label>
               <div className="flex items-center gap-2.5">
@@ -151,14 +151,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                   type="color"
                   value={color}
                   onChange={(e) => setColor(e.target.value.toUpperCase())}
-                  className="w-10 h-10 p-0.5 rounded-xl neu-card-sm cursor-pointer"
+                  className="w-9 h-9 p-0.5 rounded-lg border border-slate-200 cursor-pointer"
                 />
                 <input
                   type="text"
                   value={color}
                   maxLength={7}
                   onChange={(e) => setColor(e.target.value.toUpperCase())}
-                  className="flex-1 text-xs font-mono font-bold p-2.5 neu-input rounded-xl uppercase"
+                  className="flex-1 text-xs font-mono font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none uppercase"
                 />
               </div>
             </div>
@@ -166,7 +166,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
           {/* Title */}
           <div>
-            <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
               ชื่อหลักสูตร (Course Title) <span className="text-rose-500">*</span>
             </label>
             <input
@@ -175,14 +175,14 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               placeholder="ระบุชื่อหลักสูตรอบรม"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full text-xs font-bold p-2.5 neu-input rounded-xl"
+              className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
             />
           </div>
 
           {/* Dates */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                 วันที่เริ่มต้น (Start Date) <span className="text-rose-500">*</span>
               </label>
               <input
@@ -190,18 +190,18 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
                 required
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
-                className="w-full text-xs font-medium p-2.5 neu-input rounded-xl"
+                className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
               />
             </div>
             <div>
-              <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                 วันที่สิ้นสุด (End Date)
               </label>
               <input
                 type="date"
                 value={end}
                 onChange={(e) => setEnd(e.target.value)}
-                className="w-full text-xs font-medium p-2.5 neu-input rounded-xl"
+                className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
               />
             </div>
           </div>
@@ -209,45 +209,45 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
           {/* Times */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                 เวลาเริ่ม (Start Time)
               </label>
               <input
                 type="time"
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full text-xs font-medium p-2.5 neu-input rounded-xl"
+                className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
               />
             </div>
             <div>
-              <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                 เวลาสิ้นสุด (End Time)
               </label>
               <input
                 type="time"
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full text-xs font-medium p-2.5 neu-input rounded-xl"
+                className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
               />
             </div>
           </div>
 
           {/* Registration Settings Section */}
-          <div className="p-4.5 neu-inset rounded-3xl space-y-3.5">
-            <div className="flex items-center gap-1.5 text-xs font-black text-[#5e81ac]">
-              <Settings className="w-4 h-4 text-[#5e81ac]" />
+          <div className="p-4 bg-slate-50/80 border border-slate-200/80 rounded-xl space-y-3.5">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-600">
+              <Settings className="w-4 h-4 text-indigo-600" />
               <span>การตั้งค่าการลงทะเบียน (Registration Settings)</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                   สถานะการลงทะเบียน (Status)
                 </label>
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
-                  className="w-full text-xs font-semibold p-2.5 neu-input rounded-xl"
+                  className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
                 >
                   <option value="ไม่ต้องลงทะเบียน">ไม่ต้องลงทะเบียน (No Registration)</option>
                   <option value="เปิด">เปิด (Open)</option>
@@ -256,13 +256,13 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               </div>
 
               <div>
-                <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                   ชีตบันทึกข้อมูล (Form Sheet)
                 </label>
                 <select
                   value={formSheet}
                   onChange={(e) => setFormSheet(e.target.value)}
-                  className="w-full text-xs font-semibold p-2.5 neu-input rounded-xl font-mono"
+                  className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none font-mono"
                 >
                   <option value="">- ไม่ใช้ฟอร์ม -</option>
                   <option value="Register-1">Register-1</option>
@@ -276,26 +276,26 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                   วันเริ่มเปิดรับลงทะเบียน (Open Date)
                 </label>
                 <input
                   type="date"
                   value={openDate}
                   onChange={(e) => setOpenDate(e.target.value)}
-                  className="w-full text-xs font-medium p-2.5 neu-input rounded-xl"
+                  className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
                 />
               </div>
 
               <div>
-                <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
                   วันปิดรับลงทะเบียน (Close Date)
                 </label>
                 <input
                   type="date"
                   value={closeDate}
                   onChange={(e) => setCloseDate(e.target.value)}
-                  className="w-full text-xs font-medium p-2.5 neu-input rounded-xl"
+                  className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
                 />
               </div>
             </div>
@@ -303,7 +303,7 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
 
           {/* Location */}
           <div>
-            <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
               สถานที่อบรม / ลิงก์ออนไลน์ (Location / Online Meeting)
             </label>
             <input
@@ -311,13 +311,13 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               placeholder="เช่น ห้องประชุม 1 อาคารบริหาร หรือ MS Teams Link"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
-              className="w-full text-xs font-medium p-2.5 neu-input rounded-xl"
+              className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
             />
           </div>
 
           {/* Description */}
           <div>
-            <label className="text-[11px] font-black text-[#4c566a] uppercase tracking-wider block mb-1.5">
+            <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
               คำอธิบายหลักสูตร (Description)
             </label>
             <textarea
@@ -325,22 +325,22 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               placeholder="วัตถุประสงค์และรายละเอียดการอบรม..."
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full text-xs font-medium p-2.5 neu-input rounded-xl"
+              className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
             />
           </div>
 
           {/* Action Buttons */}
-          <div className="pt-4 flex items-center justify-end gap-2.5">
+          <div className="pt-4 flex items-center justify-end gap-2.5 border-t border-slate-100">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold text-[#4c566a] neu-btn cursor-pointer"
+              className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer transition-colors"
             >
               ยกเลิก
             </button>
             <button
               type="submit"
-              className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-xs font-black neu-btn-accent cursor-pointer"
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:from-[#172554] hover:to-[#0f172a] shadow-xs cursor-pointer transition-all"
             >
               <Save className="w-4 h-4 text-white" />
               <span>บันทึกหลักสูตร (Save Course)</span>
