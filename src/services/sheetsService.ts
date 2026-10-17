@@ -3,8 +3,6 @@ import { TrainingEvent, AttendeeRow, RegistrationPayload, TrainingCategory } fro
 export const SPREADSHEET_ID = '1gqp55Bp-HyDihtbHQGpyeVglHAXCQwXTxnefK8xVozs';
 export const MASTER_SHEET = 'Master';
 export const HOLIDAY_SHEET = 'Holiday';
-export const APPS_SCRIPT_URL =
-  'https://script.google.com/macros/s/AKfycbz4VR_4an7Iw3DYe2CoVi_6lTmHGdZ8BCvzrCVylhecny8SNccsaTNRQg3w5iPhIvs/exec';
 
 export function getContrastColor(hexcolor: string): string {
   if (!hexcolor) return '#1e293b';
@@ -285,93 +283,19 @@ export function checkAndCloseExpiredCourses(events: TrainingEvent[]): TrainingEv
 }
 
 /**
- * 1. Fetch Events from Google Apps Script Web App API (primary) or Sheets API v4 fallback
+ * 1. Fetch Events from Google Sheets API v4 (if authenticated) or Local Cache
  */
 export async function getEventsFromSheet(accessToken?: string | null): Promise<{
   events: TrainingEvent[];
-  source: 'apps-script' | 'google-sheets' | 'local-cache';
+  source: 'google-sheets' | 'local-cache';
   error?: string;
 }> {
   let masterEvents: TrainingEvent[] = [];
-  let source: 'apps-script' | 'google-sheets' | 'local-cache' = 'local-cache';
+  let source: 'google-sheets' | 'local-cache' = 'local-cache';
   let fetchError: string | undefined;
 
-  // A. Try fetching via Google Apps Script Web App API
-  try {
-    const res = await fetch(APPS_SCRIPT_URL, {
-      redirect: 'follow',
-      cache: 'no-cache',
-    });
-
-    if (res.ok) {
-      const rawData = await res.json();
-      if (Array.isArray(rawData) && rawData.length > 1) {
-        const parsed: TrainingEvent[] = [];
-
-        // Row 0 is header: ["Event_ID","Category","Title","Start_Date","End_Date","Start_Time","End_Time","Location/Link","Description","Color","Status","Open Date","Close Date","Form Sheet"]
-        for (let i = 1; i < rawData.length; i++) {
-          const row = rawData[i];
-          if (!Array.isArray(row)) continue;
-
-          const eventId = row[0] ? String(row[0]).trim() : '';
-          const title = row[2] ? String(row[2]).trim() : '';
-
-          // Skip rows that don't have a title (e.g. empty rows or standalone timestamp rows)
-          if (!title) continue;
-
-          const rawCategory = row[1] ? String(row[1]).trim() : 'Other';
-          const category = (rawCategory || 'Other') as TrainingCategory;
-
-          const startDate = parseIsoDateToBangkok(row[3]);
-          const endDate = parseIsoDateToBangkok(row[4]) || startDate;
-          const startTime = parseIsoTimeToBangkok(row[5]);
-          const endTime = parseIsoTimeToBangkok(row[6]);
-          const location = row[7] ? String(row[7]).trim() : '';
-          const description = row[8] ? String(row[8]).trim() : '';
-          const rawColor = row[9] ? String(row[9]).trim() : '';
-          const bgColor = rawColor || CATEGORY_COLORS[category] || '#EAEAEA';
-
-          const rawStatus = row[10] ? String(row[10]).trim() : '';
-          const status = rawStatus || 'ไม่ต้องลงทะเบียน';
-          const openDate = parseIsoDateToBangkok(row[11]);
-          const closeDate = parseIsoDateToBangkok(row[12]);
-          const formSheet = row[13] ? String(row[13]).trim() : '';
-
-          parsed.push({
-            id: eventId || `EVT-${Date.now()}-${i}`,
-            category,
-            title,
-            start: startDate,
-            end: endDate,
-            startTime,
-            endTime,
-            location,
-            description,
-            color: bgColor,
-            textColor: getContrastColor(bgColor),
-            status,
-            openDate,
-            closeDate,
-            formSheet,
-            isEvent: true,
-          });
-        }
-
-        if (parsed.length > 0) {
-          masterEvents = parsed;
-          source = 'apps-script';
-        }
-      }
-    } else {
-      console.warn('Apps Script returned status', res.status);
-    }
-  } catch (err: unknown) {
-    console.warn('Google Apps Script fetch error:', err);
-    fetchError = (err as Error).message;
-  }
-
-  // B. Fallback to Google Sheets API v4 if Apps Script didn't succeed and accessToken is available
-  if (masterEvents.length === 0 && accessToken) {
+  // A. Fetch from Google Sheets API v4 if accessToken is available
+  if (accessToken) {
     try {
       const masterUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Master!A2:N100`;
       const resMaster = await fetch(masterUrl, {
@@ -423,13 +347,16 @@ export async function getEventsFromSheet(accessToken?: string | null): Promise<{
         if (masterEvents.length > 0) {
           source = 'google-sheets';
         }
+      } else {
+        fetchError = `Sheets API error: ${resMaster.status}`;
       }
     } catch (e: unknown) {
-      console.warn('Fallback to Sheets API v4 failed:', e);
+      console.warn('Sheets API v4 error:', e);
+      fetchError = (e as Error).message;
     }
   }
 
-  // C. Fallback to local cache if both remote options failed
+  // B. Fallback to local cache if no accessToken or remote fetch returned no events
   if (masterEvents.length === 0) {
     masterEvents = getLocalEvents().filter((e) => e.isEvent);
     source = 'local-cache';

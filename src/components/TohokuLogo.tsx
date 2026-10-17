@@ -22,7 +22,11 @@ export const TohokuLogo: React.FC<TohokuLogoProps> = ({
         <img
           src="https://lh3.googleusercontent.com/d/1EcQrfSBABt1KQYBvjbX7zm_v4WKSyljY"
           alt="TOHOKU SOLUTIONS"
-          className={`${heightClass} w-auto object-contain`}
+          className={`${heightClass} w-auto object-contain mix-blend-multiply`}
+          style={{
+            mixBlendMode: 'multiply',
+            filter: 'contrast(106%) brightness(102%)',
+          }}
           onError={() => setImgError(true)}
         />
       ) : (

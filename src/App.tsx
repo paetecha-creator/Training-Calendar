@@ -33,6 +33,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'calendar' | 'list' | 'admin'>('calendar');
   const [events, setEvents] = useState<TrainingEvent[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(ALL_CATEGORIES);
+  const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Authentication & Google Sheets
   const [user, setUser] = useState<User | null>(null);
@@ -73,12 +74,7 @@ export default function App() {
         const res = await getEventsFromSheet(token ?? accessToken);
         setEvents(res.events);
 
-        if (res.source === 'apps-script') {
-          setSyncStatus({
-            text: 'เชื่อมต่อและซิงค์ข้อมูลกับ Google Sheets ผ่าน Web App API (Google Apps Script) สำเร็จ',
-            type: 'success',
-          });
-        } else if (res.source === 'google-sheets') {
+        if (res.source === 'google-sheets') {
           setSyncStatus({
             text: 'เชื่อมต่อและซิงค์ข้อมูลกับ Google Sheets สำเร็จ',
             type: 'success',
@@ -289,7 +285,7 @@ export default function App() {
   }, [events]);
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-slate-100 text-slate-800">
+    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#e0e5ec] text-[#3b4252]">
       {/* Top Navbar: Full-width */}
       <Header
         currentDate={currentDate}
@@ -305,25 +301,21 @@ export default function App() {
         onGoogleSignIn={handleGoogleSignIn}
         onGoogleSignOut={handleGoogleSignOut}
         onExitAdmin={() => setIsAdmin(false)}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
 
       {/* Sync Status Banner (Only visible to Admin) */}
       {isAdmin && syncStatus && (
-        <div
-          className={`px-4 py-1.5 text-xs font-semibold flex items-center justify-between border-b shrink-0 ${
-            syncStatus.type === 'success'
-              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-              : 'bg-blue-50 text-blue-800 border-blue-200'
-          }`}
-        >
+        <div className="mx-3 mt-1.5 px-4 py-2 text-xs font-semibold flex items-center justify-between rounded-xl neu-inset shrink-0 text-[#3b4252]">
           <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <CheckCircle2 className="w-4 h-4 text-[#5e81ac] shrink-0" />
               <span>{syncStatus.text}</span>
             </div>
             <button
               onClick={() => setSyncStatus(null)}
-              className="text-slate-400 hover:text-slate-700 ml-2 cursor-pointer"
+              className="text-[#7b889b] hover:text-[#2e3440] ml-2 cursor-pointer p-0.5"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -332,7 +324,7 @@ export default function App() {
       )}
 
       {/* Main Container: Full viewport height and width */}
-      <main className="flex-1 w-full p-2 md:p-3 flex flex-col lg:flex-row gap-3 min-h-0 overflow-hidden">
+      <main className="flex-1 w-full p-2.5 md:p-3.5 flex flex-col lg:flex-row gap-3.5 min-h-0 overflow-hidden">
         {/* Sidebar */}
         <Sidebar
           selectedCategories={selectedCategories}
@@ -358,6 +350,7 @@ export default function App() {
             isAdmin={isAdmin}
             onSelectEvent={(ev) => setSelectedEvent(ev)}
             onAddEventOnDate={(dateStr) => handleOpenAddEvent(dateStr)}
+            searchQuery={searchQuery}
           />
         ) : viewMode === 'list' ? (
           <ListView
@@ -368,6 +361,8 @@ export default function App() {
             onStartRegistration={(ev) => handleStartRegistration(ev)}
             onEditEvent={(ev) => handleOpenEditEvent(ev)}
             onDeleteEvent={(id) => handleDeleteEvent(id)}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
           />
         ) : (
           <AdminDashboard
