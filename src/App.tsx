@@ -5,6 +5,7 @@ import {
   saveEventToSheet,
   deleteEventFromSheet,
   submitRegistrationData,
+  flushPendingSyncQueue,
 } from './services/sheetsService';
 import { initAuth, googleSignIn, logoutGoogle } from './services/firebase';
 import { Header } from './components/Header';
@@ -18,7 +19,7 @@ import { SelectCourseModal } from './components/SelectCourseModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { User } from 'firebase/auth';
-import { CheckCircle2, X } from 'lucide-react';
+import { CheckCircle2, X, Filter } from 'lucide-react';
 
 const ALL_CATEGORIES: TrainingCategory[] = [
   'Soft Skill Training',
@@ -34,6 +35,7 @@ export default function App() {
   const [events, setEvents] = useState<TrainingEvent[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(ALL_CATEGORIES);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
   // Authentication & Google Sheets
   const [user, setUser] = useState<User | null>(null);
@@ -103,11 +105,18 @@ export default function App() {
     window.addEventListener('focus', handleFocus);
 
     const unsubscribe = initAuth(
-      (authUser, token) => {
+      async (authUser, token) => {
         setUser(authUser);
         setAccessToken(token);
         setIsAdmin(true);
         loadEvents(token);
+        if (token) {
+          try {
+            await flushPendingSyncQueue(token);
+          } catch (e) {
+            console.error('Auto-flush error:', e);
+          }
+        }
       },
       () => {
         setUser(null);
@@ -161,6 +170,17 @@ export default function App() {
         setAccessToken(result.accessToken);
         setIsAdmin(true);
         await loadEvents(result.accessToken);
+        try {
+          const flushRes = await flushPendingSyncQueue(result.accessToken);
+          if (flushRes.flushedCount > 0) {
+            setSyncStatus({
+              text: `เชื่อมต่อ Google Sheets สำเร็จ และซิงค์ข้อมูลค้างส่งลงชีตแล้ว ${flushRes.flushedCount} รายการ`,
+              type: 'success',
+            });
+          }
+        } catch (e) {
+          console.error(e);
+        }
       }
     } catch (err) {
       console.error('Google sign-in error', err);
@@ -296,7 +316,7 @@ export default function App() {
   }, [events]);
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#eef2f6] text-slate-800">
+    <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#eef2f6] text-slate-800 relative">
       {/* Top Navbar: Full-width */}
       <Header
         currentDate={currentDate}
@@ -314,6 +334,7 @@ export default function App() {
         onExitAdmin={() => setIsAdmin(false)}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        onToggleMobileMenu={() => setIsMobileSidebarOpen(true)}
       />
 
       {/* Sync Status Banner (Only visible to Admin) */}
@@ -335,22 +356,79 @@ export default function App() {
       )}
 
       {/* Main Container: Full viewport height and width */}
-      <main className="flex-1 w-full p-2.5 md:p-3.5 flex flex-col lg:flex-row gap-3.5 min-h-0 overflow-hidden">
-        {/* Sidebar */}
-        <Sidebar
-          selectedCategories={selectedCategories}
-          onToggleCategory={toggleCategory}
-          onToggleAllCategories={handleToggleAllCategories}
-          categoryCounts={categoryCounts}
-          openCoursesCount={openCourses.length}
-          onOpenRegisterModal={() => setIsSelectCourseModalOpen(true)}
-          hasLatestSubmission={Boolean(sessionRegData)}
-          onEditLatestSubmission={handleEditLatestSubmission}
-          isAdmin={isAdmin}
-          onOpenAdminManage={() => setViewMode('admin')}
-          onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
-          onExitAdmin={() => setIsAdmin(false)}
-        />
+      <main className="flex-1 w-full p-2 sm:p-2.5 md:p-3.5 flex flex-col lg:flex-row gap-2.5 sm:gap-3.5 min-h-0 overflow-hidden">
+        {/* Desktop Sidebar: Permanent left column */}
+        <div className="hidden lg:block h-full shrink-0">
+          <Sidebar
+            selectedCategories={selectedCategories}
+            onToggleCategory={toggleCategory}
+            onToggleAllCategories={handleToggleAllCategories}
+            categoryCounts={categoryCounts}
+            openCoursesCount={openCourses.length}
+            onOpenRegisterModal={() => setIsSelectCourseModalOpen(true)}
+            hasLatestSubmission={Boolean(sessionRegData)}
+            onEditLatestSubmission={handleEditLatestSubmission}
+            isAdmin={isAdmin}
+            onOpenAdminManage={() => setViewMode('admin')}
+            onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
+            onExitAdmin={() => setIsAdmin(false)}
+          />
+        </div>
+
+        {/* Mobile Sidebar Slide-Over Drawer */}
+        {isMobileSidebarOpen && (
+          <div className="fixed inset-0 z-50 lg:hidden flex">
+            <div
+              className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
+              onClick={() => setIsMobileSidebarOpen(false)}
+            />
+            <div className="relative w-80 max-w-[85vw] h-full bg-[#eef2f6] p-3 flex flex-col z-10 shadow-2xl overflow-y-auto">
+              <div className="flex items-center justify-between pb-2 mb-1 border-b border-slate-200/80">
+                <span className="font-extrabold text-xs text-[#1e3a8a] uppercase tracking-wider">
+                  เมนู & หมวดหมู่หลักสูตร
+                </span>
+                <button
+                  onClick={() => setIsMobileSidebarOpen(false)}
+                  className="p-1.5 rounded-xl bg-white border border-slate-200 text-slate-500 hover:text-rose-500 cursor-pointer shadow-xs"
+                  title="ปิดเมนู"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex-1 min-h-0">
+                <Sidebar
+                  selectedCategories={selectedCategories}
+                  onToggleCategory={toggleCategory}
+                  onToggleAllCategories={handleToggleAllCategories}
+                  categoryCounts={categoryCounts}
+                  openCoursesCount={openCourses.length}
+                  onOpenRegisterModal={() => {
+                    setIsMobileSidebarOpen(false);
+                    setIsSelectCourseModalOpen(true);
+                  }}
+                  hasLatestSubmission={Boolean(sessionRegData)}
+                  onEditLatestSubmission={() => {
+                    setIsMobileSidebarOpen(false);
+                    handleEditLatestSubmission();
+                  }}
+                  isAdmin={isAdmin}
+                  onOpenAdminManage={() => {
+                    setIsMobileSidebarOpen(false);
+                    setViewMode('admin');
+                  }}
+                  onOpenAdminLogin={() => {
+                    setIsMobileSidebarOpen(false);
+                    setIsAdminLoginModalOpen(true);
+                  }}
+                  onExitAdmin={() => {
+                    setIsMobileSidebarOpen(false);
+                    setIsAdmin(false);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Dynamic Main View: Full-height and full-width */}
         {viewMode === 'calendar' ? (
@@ -381,9 +459,24 @@ export default function App() {
             accessToken={accessToken}
             onRefreshEvents={() => loadEvents(accessToken)}
             isSyncing={isSyncing}
+            onGoogleSignIn={handleGoogleSignIn}
           />
         )}
       </main>
+
+      {/* Floating Action Button on Mobile */}
+      {viewMode !== 'admin' && (
+        <div className="fixed bottom-4 right-4 z-40 lg:hidden flex items-center gap-2">
+          <button
+            onClick={() => setIsMobileSidebarOpen(true)}
+            className="neu-btn flex items-center gap-2 px-3.5 py-2.5 rounded-full text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] shadow-lg cursor-pointer active:scale-95 transition-all"
+            title="เปิดตัวกรองหมวดหมู่และลงทะเบียน"
+          >
+            <Filter className="w-4 h-4 text-white" />
+            <span>ตัวกรอง ({selectedCategories.length}/{ALL_CATEGORIES.length})</span>
+          </button>
+        </div>
+      )}
 
       {/* Modals */}
       <EventModal
@@ -423,6 +516,7 @@ export default function App() {
       <AdminLoginModal
         isOpen={isAdminLoginModalOpen}
         onClose={() => setIsAdminLoginModalOpen(false)}
+        onGoogleSignIn={handleGoogleSignIn}
         onLoginSuccess={() => {
           setIsAdmin(true);
           setViewMode('admin');

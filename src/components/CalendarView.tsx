@@ -121,28 +121,37 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     });
   }, [events, selectedCategories, searchQuery]);
 
-  const weekHeaders = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+  const weekHeaders = [
+    { en: 'SUN', th: 'อา.' },
+    { en: 'MON', th: 'จ.' },
+    { en: 'TUE', th: 'อ.' },
+    { en: 'WED', th: 'พ.' },
+    { en: 'THU', th: 'พฤ.' },
+    { en: 'FRI', th: 'ศ.' },
+    { en: 'SAT', th: 'ส.' },
+  ];
 
   return (
-    <div className="flex-1 h-full neu-card rounded-2xl p-3 md:p-4 flex flex-col min-w-0 overflow-hidden">
+    <div className="flex-1 h-full neu-card rounded-2xl p-2.5 sm:p-3 md:p-4 flex flex-col min-w-0 overflow-hidden">
       {/* Month Days Header */}
-      <div className="grid grid-cols-7 gap-1.5 md:gap-2 mb-2 shrink-0">
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 md:gap-2 mb-1.5 sm:mb-2 shrink-0">
         {weekHeaders.map((day, idx) => (
           <div
-            key={day}
-            className={`text-center py-1.5 rounded-lg text-[11px] font-bold tracking-wider ${
+            key={day.en}
+            className={`text-center py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-bold tracking-wider ${
               idx === 0
-                ? 'text-rose-600 bg-rose-50/70 border border-rose-100'
-                : 'text-slate-600 bg-slate-50 border border-slate-100'
+                ? 'text-rose-600 bg-rose-50/80 border border-rose-200/80 shadow-2xs'
+                : 'text-slate-700 bg-slate-50/90 border border-slate-200/80 shadow-2xs'
             }`}
           >
-            {day}
+            <span className="sm:hidden">{day.th}</span>
+            <span className="hidden sm:inline">{day.en}</span>
           </div>
         ))}
       </div>
 
-      {/* Calendar 7x6 Matrix Grid expanding to full height */}
-      <div className="grid grid-cols-7 grid-rows-6 gap-1.5 md:gap-2 flex-1 min-h-0 overflow-hidden p-0.5">
+      {/* Calendar Matrix Grid: Expands rows vertically when multiple courses occur on the same day */}
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 md:gap-2 flex-1 min-h-0 overflow-y-auto p-1 auto-rows-fr">
         {calendarDays.map((day) => {
           // Find events on this date
           const dayEvents = filteredEvents.filter((ev) => {
@@ -157,24 +166,24 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   onAddEventOnDate(day.dateStr);
                 }
               }}
-              className={`h-full rounded-xl p-1.5 flex flex-col justify-between transition-all overflow-hidden group select-none ${
+              className={`min-h-[85px] sm:min-h-[110px] md:min-h-[125px] h-full rounded-xl p-1 sm:p-1.5 md:p-2 flex flex-col justify-start transition-all group select-none shadow-[2px_2px_6px_rgba(0,0,0,0.07),-2px_-2px_6px_rgba(255,255,255,0.95)] ${
                 day.isToday
-                  ? 'bg-gradient-to-b from-[#f8fafc] to-[#eef2f6] border-2 border-[#1e3a8a] neu-card-sm ring-2 ring-[#1e3a8a]/20'
+                  ? 'bg-gradient-to-b from-[#f8fafc] to-[#eef2f6] border-2 border-[#1e3a8a] ring-2 ring-[#1e3a8a]/20 shadow-[3px_3px_8px_rgba(30,58,138,0.18),-2px_-2px_6px_rgba(255,255,255,1)]'
                   : day.isCurrentMonth
-                  ? 'neu-card-sm'
+                  ? 'neu-card-sm border border-slate-200/70 hover:shadow-[3px_3px_8px_rgba(0,0,0,0.1),-3px_-3px_8px_rgba(255,255,255,1)]'
                   : 'neu-inset-sm opacity-45'
               } ${isAdmin ? 'cursor-pointer hover:border-[#1e3a8a]/60' : ''}`}
             >
               {/* Day Number Header */}
-              <div className="flex items-center justify-between mb-1 shrink-0">
+              <div className="flex items-center justify-between mb-1.5 shrink-0">
                 <span
-                  className={`text-[11px] md:text-xs font-bold flex items-center justify-center w-5.5 h-5.5 md:w-6 md:h-6 rounded-lg transition-all ${
+                  className={`text-[10px] sm:text-[11px] md:text-xs font-bold flex items-center justify-center w-5 h-5 sm:w-5.5 sm:h-5.5 md:w-6 md:h-6 rounded-lg transition-all ${
                     day.isToday
                       ? 'bg-gradient-to-r from-[#1e3a8a] to-[#172554] text-white font-extrabold shadow-sm'
                       : day.isSunday
-                      ? 'text-rose-600 font-bold bg-rose-50/80 border border-rose-100 shadow-2xs'
+                      ? 'text-rose-600 font-bold bg-rose-50/80 border border-rose-200 shadow-2xs'
                       : day.isCurrentMonth
-                      ? 'text-slate-800 font-bold bg-slate-50 border border-slate-100 shadow-2xs'
+                      ? 'text-slate-800 font-bold bg-slate-50 border border-slate-200 shadow-2xs'
                       : 'text-slate-400 font-medium'
                   }`}
                 >
@@ -184,21 +193,21 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 {isAdmin && (
                   <span
                     className="opacity-0 group-hover:opacity-100 text-[9px] text-[#1e3a8a] bg-blue-50 border border-blue-200 px-1 py-0.5 rounded font-bold transition-opacity"
-                    title="เพิ่มหลักสูตร"
+                    title="เพิ่มหลักสูตรในวันนี้"
                   >
                     + เพิ่ม
                   </span>
                 )}
               </div>
 
-              {/* Day Event Chips (CSS selector 7: embossed dual shadow event chip) */}
-              <div className="space-y-1 overflow-y-auto flex-1 min-h-0 pr-0.5">
+              {/* Day Event Chips: Display ALL courses completely, expanding cell height naturally */}
+              <div className="space-y-1.5 w-full flex-1 flex flex-col">
                 {dayEvents.map((ev) => {
                   if (ev.isHoliday) {
                     return (
                       <div
                         key={ev.id}
-                        className="text-[10px] font-bold text-rose-600 text-center py-0.5 px-1.5 rounded-md border border-rose-100 bg-rose-50/80 truncate shadow-2xs"
+                        className="text-[9px] sm:text-[10px] font-bold text-rose-600 text-center py-1 px-1.5 rounded-md border border-rose-200 bg-rose-50/90 shadow-2xs leading-tight"
                         title={ev.title}
                       >
                         ★ {ev.title}
@@ -219,20 +228,22 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         backgroundColor: ev.color,
                         color: ev.textColor || '#0f172a',
                       }}
-                      className="w-full text-left p-1.5 rounded-lg text-[10px] md:text-[11px] font-semibold neu-chip hover:scale-[1.01] active:scale-95 transition-all cursor-pointer block truncate relative"
+                      className="w-full text-left p-1.5 rounded-lg text-[9px] sm:text-[10px] md:text-[11px] font-semibold neu-chip hover:scale-[1.01] active:scale-95 transition-all cursor-pointer block relative shadow-xs"
                     >
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-start gap-1">
                         {isOpen && (
                           <span
-                            className="w-2 h-2 rounded-full bg-[#1e3a8a] shrink-0 animate-ping inline-block"
+                            className="w-2 h-2 rounded-full bg-[#1e3a8a] shrink-0 mt-0.5 animate-ping inline-block"
                             title="เปิดรับลงทะเบียน"
                           />
                         )}
-                        <span className="truncate flex-1 tracking-tight">{ev.title}</span>
+                        <span className="flex-1 tracking-tight leading-snug line-clamp-2 md:line-clamp-none break-words">
+                          {ev.title}
+                        </span>
                       </div>
                       {ev.startTime && (
-                        <div className="text-[9px] opacity-75 flex items-center gap-1 mt-0.5 font-normal">
-                          <Clock className="w-2.5 h-2.5 inline" />
+                        <div className="text-[8px] sm:text-[9px] opacity-80 flex items-center gap-1 mt-1 font-medium">
+                          <Clock className="w-2.5 h-2.5 inline shrink-0" />
                           <span>{ev.startTime}</span>
                         </div>
                       )}

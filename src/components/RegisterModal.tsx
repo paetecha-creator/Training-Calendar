@@ -314,10 +314,17 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     if (!receiptInfo) return;
     setIsDownloadingPdf(true);
     try {
-      await downloadRegistrationReceiptPdf(receiptInfo);
+      const cardEl = document.getElementById('receipt-print-card');
+      await downloadRegistrationReceiptPdf(receiptInfo, cardEl);
     } catch (e) {
-      console.error(e);
-      alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF กรุณากดปุ่มพิมพ์เอกสารแทน');
+      console.error('PDF Download Error:', e);
+      // Fallback try without card element
+      try {
+        await downloadRegistrationReceiptPdf(receiptInfo);
+      } catch (err) {
+        console.error('Fallback PDF Download Error:', err);
+        alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF ท่านสามารถกดปุ่มพิมพ์เอกสาร (Print) เพื่อบันทึกเป็น PDF แทนได้');
+      }
     } finally {
       setIsDownloadingPdf(false);
     }

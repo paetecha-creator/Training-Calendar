@@ -265,6 +265,90 @@ function saveLocalAttendees(sheetName: string, attendees: AttendeeRow[]) {
   }
 }
 
+// Google Apps Script Web App URL for 100% free anonymous updates
+export function getSheetsWebAppUrl(): string {
+  try {
+    return (
+      localStorage.getItem('training_sheets_webapp_url') ||
+      (import.meta.env.VITE_SHEETS_WEBAPP_URL as string) ||
+      ''
+    );
+  } catch {
+    return '';
+  }
+}
+
+export function setSheetsWebAppUrl(url: string): void {
+  try {
+    localStorage.setItem('training_sheets_webapp_url', url.trim());
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export interface PendingSyncItem {
+  id: string;
+  type: 'save_event' | 'delete_event' | 'registration';
+  payload: any;
+  timestamp: number;
+}
+
+export function getPendingSyncQueue(): PendingSyncItem[] {
+  try {
+    const raw = localStorage.getItem('training_pending_sync_queue');
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.error(e);
+  }
+  return [];
+}
+
+export function addPendingSyncItem(item: Omit<PendingSyncItem, 'id' | 'timestamp'>): void {
+  try {
+    const list = getPendingSyncQueue();
+    list.push({
+      ...item,
+      id: 'PEND-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+      timestamp: Date.now(),
+    });
+    localStorage.setItem('training_pending_sync_queue', JSON.stringify(list));
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export function clearPendingSyncQueue(): void {
+  try {
+    localStorage.removeItem('training_pending_sync_queue');
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export async function sendToSheetsWebApp(action: string, payload: any): Promise<boolean> {
+  const url = getSheetsWebAppUrl();
+  if (!url) return false;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action,
+        ...payload,
+        spreadsheetId: SPREADSHEET_ID,
+        timestamp: new Date().toISOString(),
+      }),
+    });
+    return true;
+  } catch (err) {
+    console.warn('Error sending to WebApp endpoint:', err);
+    return false;
+  }
+}
+
 // Check and close courses past close registration date
 export function checkAndCloseExpiredCourses(events: TrainingEvent[]): TrainingEvent[] {
   const today = new Date();
@@ -617,7 +701,12 @@ export async function saveEventToSheet(
   }
   saveLocalEvents(localEvents);
 
+  // 1. Try sending to Google Apps Script Web App if configured (zero-login public sync)
+  sendToSheetsWebApp('save_event', { event: newEvent });
+
   if (!accessToken) {
+    // Queue pending change so it automatically pushes to Google Sheets when Admin connects
+    addPendingSyncItem({ type: 'save_event', payload: newEvent });
     return { success: true, event: newEvent };
   }
 
@@ -682,6 +771,7 @@ export async function saveEventToSheet(
     return { success: true, event: newEvent };
   } catch (err: unknown) {
     console.error('Save to sheet error:', err);
+    addPendingSyncItem({ type: 'save_event', payload: newEvent });
     return { success: true, event: newEvent, error: (err as Error).message };
   }
 }
@@ -694,7 +784,11 @@ export async function deleteEventFromSheet(
   const localEvents = getLocalEvents().filter((e) => e.id !== eventId);
   saveLocalEvents(localEvents);
 
+  // Send to Google Apps Script Web App if configured
+  sendToSheetsWebApp('delete_event', { eventId });
+
   if (!accessToken) {
+    addPendingSyncItem({ type: 'delete_event', payload: { eventId } });
     return { success: true };
   }
 
@@ -722,6 +816,7 @@ export async function deleteEventFromSheet(
     return { success: true };
   } catch (err: unknown) {
     console.error('Delete from sheet error:', err);
+    addPendingSyncItem({ type: 'delete_event', payload: { eventId } });
     return { success: false, error: (err as Error).message };
   }
 }
@@ -771,7 +866,20 @@ export async function submitRegistrationData(
     saveLocalAttendees(formSheet, [...currentAttendees, ...formattedRows]);
   }
 
+  // Send to Web App endpoint if configured
+  sendToSheetsWebApp('registration', {
+    formSheet,
+    data,
+    submitterName,
+    submitterDept,
+    submitterPhone,
+    isEditMode,
+    rowIndices,
+  });
+
   if (!accessToken) {
+    // Queue pending change so it automatically pushes to Google Sheets when Admin connects
+    addPendingSyncItem({ type: 'registration', payload });
     return { success: true, insertedIndices: newInsertedIndices };
   }
 
@@ -820,8 +928,97 @@ export async function submitRegistrationData(
     return { success: true, insertedIndices: newInsertedIndices };
   } catch (err: unknown) {
     console.error('Submit registration error:', err);
+    addPendingSyncItem({ type: 'registration', payload });
     return { success: true, insertedIndices: newInsertedIndices, error: (err as Error).message };
   }
+}
+
+/**
+ * Intelligent Attendee Row Parser based on Register-1 gold standard:
+ * Col 1: Code (e.g. 9579)
+ * Col 2: Sex ('Mr.', 'Ms.', 'Mrs.')
+ * Col 3: First Name ('Promrin')
+ * Col 4: Last Name ('Srisang')
+ * Col 5: Dept ('ENG / PTE')
+ * Col 6: Position ('Chief Technician')
+ * Col 7: Expectation ('23456')
+ * Col 8: Apply ('s')
+ * Col 9: Remark ('s')
+ * Col 10: Submitter Name ('rediotyrt')
+ * Col 11: Submitter Dept ('zer5u')
+ * Col 12: Submitter Phone ('aeutdoup')
+ *
+ * Automatically detects shifted sheets (like Register-3 with duplicate Sex/Title columns)
+ * and skips headers & descriptive banner rows.
+ */
+export function parseAttendeeFromCells(c: any[], rowIndex: number): AttendeeRow | null {
+  if (!c || c.length === 0) return null;
+
+  const rawVals = c.map((cell) => {
+    if (cell === null || cell === undefined) return '';
+    if (typeof cell === 'object' && cell !== null) {
+      return String(cell.f || cell.v || '').trim();
+    }
+    return String(cell).trim();
+  });
+
+  // 1. Skip table headers and descriptive rows
+  const isHeader = rawVals.some((val) =>
+    /^(Training Registration|Course Name|Training Date|Title \/ Sex|First Name|Last-name|Dept\. \/ In-charge|Position|Expectation for Training)$/i.test(
+      val
+    )
+  );
+  if (isHeader) return null;
+
+  // 2. Code is in col 1 or col 0
+  const codeCandidate = rawVals[1] || rawVals[0] || '';
+  if (!codeCandidate || /^(code|no\.|#|รหัส|คำนำหน้า)$/i.test(codeCandidate)) {
+    return null;
+  }
+
+  // 3. Detect column shift:
+  // In Register-3: Col 2='Mr.', Col 3='Mr.', Col 4='First Name', Col 5='Last Name', etc.
+  const sexRegex = /^(mr\.|ms\.|mrs\.|นาย|นาง|นางสาว|miss|master)$/i;
+  const isCol3Sex = sexRegex.test(rawVals[3]);
+
+  if (isCol3Sex && rawVals[4] && !sexRegex.test(rawVals[4])) {
+    // Shifted layout (as in Register-3)
+    return {
+      code: rawVals[1],
+      sex: (rawVals[2] || rawVals[3] || 'Mr.') as 'Mr.' | 'Ms.' | 'Mrs.',
+      fname: rawVals[4],
+      lname: rawVals[5] || '',
+      dept: rawVals[6] || '',
+      pos: rawVals[7] || '',
+      exp: rawVals[8] || '',
+      app: rawVals[9] || '',
+      rem: rawVals[10] && rawVals.length > 13 ? rawVals[10] : '',
+      submitterName: rawVals[10] || '',
+      submitterDept: rawVals[11] || '',
+      submitterPhone: rawVals[12] || '',
+      rowIndex,
+    };
+  }
+
+  // Standard Register-1 layout
+  const fname = rawVals[3] || '';
+  if (!fname && !rawVals[4]) return null;
+
+  return {
+    code: rawVals[1] || rawVals[0],
+    sex: (rawVals[2] as 'Mr.' | 'Ms.' | 'Mrs.') || 'Mr.',
+    fname: rawVals[3] || '',
+    lname: rawVals[4] || '',
+    dept: rawVals[5] || '',
+    pos: rawVals[6] || '',
+    exp: rawVals[7] || '',
+    app: rawVals[8] || '',
+    rem: rawVals[9] || '',
+    submitterName: rawVals[10] || '',
+    submitterDept: rawVals[11] || '',
+    submitterPhone: rawVals[12] || '',
+    rowIndex,
+  };
 }
 
 // 5. Fetch Registration Attendees for a sheet
@@ -843,62 +1040,33 @@ export async function getRegistrationAttendees(
         const attendees: AttendeeRow[] = [];
 
         for (let i = 0; i < rows.length; i++) {
-          const cols = rows[i];
-          const code = cols[1] || cols[0];
-          const fname = cols[3] || cols[2];
-          if (!code && !fname) continue;
-
-          attendees.push({
-            code: cols[1] || '',
-            sex: (cols[2] as 'Mr.' | 'Ms.' | 'Mrs.') || 'Mr.',
-            fname: cols[3] || '',
-            lname: cols[4] || '',
-            dept: cols[5] || '',
-            pos: cols[6] || '',
-            exp: cols[7] || '',
-            app: cols[8] || '',
-            rem: cols[9] || '',
-            submitterName: cols[10] || '',
-            submitterDept: cols[11] || '',
-            submitterPhone: cols[12] || '',
-            rowIndex: 5 + i,
-          });
+          const parsed = parseAttendeeFromCells(rows[i], 5 + i);
+          if (parsed) {
+            attendees.push(parsed);
+          }
         }
 
-        saveLocalAttendees(sheetName, attendees);
-        return { attendees };
+        if (attendees.length > 0) {
+          saveLocalAttendees(sheetName, attendees);
+          return { attendees };
+        }
       }
     } catch (err: unknown) {
       console.warn('Sheets API v4 error for attendees, falling back to public GViz:', err);
     }
   }
 
-  // Public Google Sheets GViz fetch so all users see the real-time attendees from the same sheet
+  // Public Google Sheets GViz fetch so all users see real-time attendees from the same sheet
   try {
     const gvizData = await fetchSheetGvizData(sheetName);
     if (gvizData?.table?.rows) {
       const attendees: AttendeeRow[] = [];
       gvizData.table.rows.forEach((r: any, i: number) => {
         const c = r.c || [];
-        const code = c[1]?.v ? String(c[1].v).trim() : (c[0]?.v ? String(c[0].v).trim() : '');
-        const fname = c[3]?.v ? String(c[3].v).trim() : (c[2]?.v ? String(c[2].v).trim() : '');
-        if (!code && !fname) return;
-
-        attendees.push({
-          code: c[1]?.v ? String(c[1].v) : '',
-          sex: (c[2]?.v as 'Mr.' | 'Ms.' | 'Mrs.') || 'Mr.',
-          fname: c[3]?.v ? String(c[3].v) : '',
-          lname: c[4]?.v ? String(c[4].v) : '',
-          dept: c[5]?.v ? String(c[5].v) : '',
-          pos: c[6]?.v ? String(c[6].v) : '',
-          exp: c[7]?.v ? String(c[7].v) : '',
-          app: c[8]?.v ? String(c[8].v) : '',
-          rem: c[9]?.v ? String(c[9].v) : '',
-          submitterName: c[10]?.v ? String(c[10].v) : '',
-          submitterDept: c[11]?.v ? String(c[11].v) : '',
-          submitterPhone: c[12]?.v ? String(c[12].v) : '',
-          rowIndex: 5 + i,
-        });
+        const parsed = parseAttendeeFromCells(c, 5 + i);
+        if (parsed) {
+          attendees.push(parsed);
+        }
       });
 
       if (attendees.length > 0) {
@@ -928,6 +1096,8 @@ export async function clearRegistrationSheet(
   });
   saveLocalEvents(localEvents);
 
+  sendToSheetsWebApp('clear_sheet', { formSheet: sheetName });
+
   if (!accessToken) {
     return { success: true };
   }
@@ -945,3 +1115,41 @@ export async function clearRegistrationSheet(
     return { success: false, error: (err as Error).message };
   }
 }
+
+// 7. Auto-Flush Pending Sync Queue when Admin is authenticated
+export async function flushPendingSyncQueue(
+  accessToken: string
+): Promise<{ flushedCount: number }> {
+  const queue = getPendingSyncQueue();
+  if (queue.length === 0) return { flushedCount: 0 };
+
+  let count = 0;
+  const remaining: PendingSyncItem[] = [];
+
+  for (const item of queue) {
+    try {
+      if (item.type === 'save_event') {
+        await saveEventToSheet(item.payload, accessToken);
+        count++;
+      } else if (item.type === 'registration') {
+        await submitRegistrationData(item.payload, accessToken);
+        count++;
+      } else if (item.type === 'delete_event') {
+        await deleteEventFromSheet(item.payload.eventId, accessToken);
+        count++;
+      }
+    } catch (e) {
+      console.error('Failed to flush item:', item, e);
+      remaining.push(item);
+    }
+  }
+
+  if (remaining.length > 0) {
+    localStorage.setItem('training_pending_sync_queue', JSON.stringify(remaining));
+  } else {
+    clearPendingSyncQueue();
+  }
+
+  return { flushedCount: count };
+}
+

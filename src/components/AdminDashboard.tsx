@@ -4,6 +4,10 @@ import {
   getRegistrationAttendees,
   clearRegistrationSheet,
   SPREADSHEET_ID,
+  getSheetsWebAppUrl,
+  setSheetsWebAppUrl,
+  getPendingSyncQueue,
+  flushPendingSyncQueue,
 } from '../services/sheetsService';
 import { exportAttendeesToExcel, exportAttendeesToCsv } from '../utils/excelHelper';
 import {
@@ -16,6 +20,12 @@ import {
   ExternalLink,
   Database,
   CheckCircle2,
+  Settings,
+  UploadCloud,
+  Code,
+  KeyRound,
+  Check,
+  Copy,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -23,6 +33,7 @@ interface AdminDashboardProps {
   accessToken: string | null;
   onRefreshEvents: () => void;
   isSyncing: boolean;
+  onGoogleSignIn?: () => Promise<void>;
 }
 
 const FORM_SHEETS: FormSheetName[] = [
@@ -38,6 +49,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   accessToken,
   onRefreshEvents,
   isSyncing,
+  onGoogleSignIn,
 }) => {
   const [selectedSheet, setSelectedSheet] = useState<FormSheetName>('Register-1');
   const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
@@ -47,6 +59,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     text: string;
     type: 'success' | 'error';
   } | null>(null);
+
+  // Sync Settings & WebApp Webhook
+  const [showSyncSettings, setShowSyncSettings] = useState(false);
+  const [webAppUrlInput, setWebAppUrlInput] = useState(getSheetsWebAppUrl());
+  const [isSavingUrl, setIsSavingUrl] = useState(false);
+  const [pendingCount, setPendingCount] = useState(getPendingSyncQueue().length);
+  const [isFlushing, setIsFlushing] = useState(false);
+  const [showScriptModal, setShowScriptModal] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   // Find linked event for currently selected sheet
   const linkedCourse = useMemo(() => {
@@ -130,42 +151,203 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [attendees]);
 
+  const handleSaveWebAppUrl = () => {
+    setIsSavingUrl(true);
+    try {
+      setSheetsWebAppUrl(webAppUrlInput);
+      setStatusMessage({
+        text: 'บันทึก Google Apps Script Web App URL เรียบร้อยแล้ว ระบบจะส่งข้อมูลลงชีตผ่าน Webhook อัตโนมัติ',
+        type: 'success',
+      });
+    } catch {
+      setStatusMessage({ text: 'บันทึก URL ไม่สำเร็จ', type: 'error' });
+    } finally {
+      setIsSavingUrl(false);
+    }
+  };
+
+  const handleFlushPending = async () => {
+    if (!accessToken) {
+      if (onGoogleSignIn) {
+        await onGoogleSignIn();
+      } else {
+        alert('กรุณาเชื่อมต่อบัญชี Google ก่อนเพื่อส่งข้อมูลลงชีต');
+      }
+      return;
+    }
+    setIsFlushing(true);
+    try {
+      const res = await flushPendingSyncQueue(accessToken);
+      setPendingCount(getPendingSyncQueue().length);
+      setStatusMessage({
+        text: `ซิงค์ข้อมูลค้างส่งลง Google Sheets สำเร็จแล้ว ${res.flushedCount} รายการ`,
+        type: 'success',
+      });
+      await loadSheetData(selectedSheet);
+    } catch (err) {
+      console.error(err);
+      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการซิงค์คิวค้างส่ง', type: 'error' });
+    } finally {
+      setIsFlushing(false);
+    }
+  };
+
+  const appsScriptCode = `// Google Apps Script สำหรับ Tohoku Solutions Spreadsheet
+function doPost(e) {
+  try {
+    var contents = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var action = contents.action;
+
+    if (action === 'registration') {
+      var sheet = ss.getSheetByName(contents.formSheet) || ss.insertSheet(contents.formSheet);
+      var rows = contents.data.map(function(d) {
+        return [
+          d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8] || '',
+          contents.submitterName, contents.submitterDept, contents.submitterPhone
+        ];
+      });
+      rows.forEach(function(r) {
+        sheet.appendRow(r);
+      });
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (action === 'save_event') {
+      var master = ss.getSheetByName('Master');
+      var ev = contents.event;
+      var row = [ev.id, ev.category, ev.title, ev.start, ev.end, ev.startTime, ev.endTime, ev.location, ev.description, ev.color, ev.status, ev.openDate, ev.closeDate, ev.formSheet];
+      var data = master.getDataRange().getValues();
+      var foundRow = -1;
+      for (var i = 1; i < data.length; i++) {
+        if (data[i][0] === ev.id) { foundRow = i + 1; break; }
+      }
+      if (foundRow > 0) {
+        master.getRange(foundRow, 1, 1, row.length).setValues([row]);
+      } else {
+        master.appendRow(row);
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    return ContentService.createTextOutput(JSON.stringify({ status: 'ok' })).setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService.createTextOutput(JSON.stringify({ error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}`;
+
   return (
     <div className="flex-1 h-full neu-card rounded-2xl p-4 md:p-5 flex flex-col min-w-0 overflow-hidden">
-      {/* 1. Compact Google Sheets Status Bar (Takes minimal vertical space) */}
-      <div className="mb-3 py-2 px-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-center justify-between text-xs shrink-0">
+      {/* 1. Google Sheets Live Status & Integration Bar */}
+      <div className="mb-3 py-2 px-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-center justify-between text-xs shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2.5 flex-wrap min-w-0">
           <div className="flex items-center gap-2 font-bold text-slate-800 shrink-0">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs"></span>
+            <span className={`w-2.5 h-2.5 rounded-full ${accessToken ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'} shadow-xs`}></span>
             <Database className="w-3.5 h-3.5 text-[#1e3a8a]" />
-            <span>Google Sheets Connected (Live Status)</span>
+            <span>
+              {accessToken ? 'Google Sheets Sync: เชื่อมต่อสด (พร้อมเขียนอัตโนมัติ)' : 'Google Sheets: อ่านข้อมูลสด (GViz)'}
+            </span>
           </div>
-          <span className="text-[10px] font-mono text-[#1e3a8a] bg-blue-50/70 border border-blue-200/70 px-2 py-0.5 rounded-md truncate hidden md:inline">
-            Spreadsheet ID: {SPREADSHEET_ID}
-          </span>
+
+          {pendingCount > 0 && (
+            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+              ค้างส่ง: {pendingCount} รายการ
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {/* Quick Google Sign In to authorize Sheets API writing */}
+          {!accessToken && onGoogleSignIn && (
+            <button
+              onClick={onGoogleSignIn}
+              title="เชื่อมต่อบัญชี Google เพื่อเปิดการเขียนลง Sheets อัตโนมัติ"
+              className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:from-[#172554] hover:to-[#0f172a] rounded-lg shadow-xs cursor-pointer transition-all"
+            >
+              <KeyRound className="w-3 h-3 text-white" />
+              <span>เชื่อมต่อ Google Account</span>
+            </button>
+          )}
+
+          {pendingCount > 0 && (
+            <button
+              onClick={handleFlushPending}
+              disabled={isFlushing}
+              className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg cursor-pointer transition-colors"
+            >
+              <UploadCloud className={`w-3 h-3 ${isFlushing ? 'animate-bounce' : ''}`} />
+              <span>{isFlushing ? 'กำลังส่ง...' : `ส่งคิว (${pendingCount})`}</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setShowSyncSettings(!showSyncSettings)}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
+            title="ตั้งค่า Webhook และดูโค้ด Apps Script"
+          >
+            <Settings className="w-3 h-3 text-[#1e3a8a]" />
+            <span className="hidden sm:inline">ตั้งค่าซิงค์</span>
+          </button>
+
           <button
             onClick={onRefreshEvents}
             disabled={isSyncing}
-            className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
           >
             <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin text-[#1e3a8a]' : 'text-[#1e3a8a]'}`} />
-            <span className="hidden sm:inline">ซิงค์ชีต</span>
+            <span className="hidden sm:inline">รีเฟรช</span>
           </button>
 
           <a
             href={`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:from-[#172554] hover:to-[#0f172a] rounded-lg shadow-xs transition-all"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-xs transition-all"
           >
-            <ExternalLink className="w-3 h-3 text-white" />
-            <span>เปิดชีต</span>
+            <ExternalLink className="w-3 h-3 text-[#1e3a8a]" />
+            <span className="hidden sm:inline">เปิดชีต</span>
           </a>
         </div>
       </div>
+
+      {/* Collapsible Sync Settings Panel */}
+      {showSyncSettings && (
+        <div className="mb-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50/60 text-xs shrink-0 space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-slate-900 flex items-center gap-1.5">
+              <UploadCloud className="w-4 h-4 text-[#1e3a8a]" />
+              ช่องทางการซิงค์ข้อมูลลง Google Sheets อัตโนมัติ (Automated 2-Way Sync)
+            </span>
+            <button
+              onClick={() => setShowScriptModal(true)}
+              className="text-[#1e3a8a] font-bold hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              <Code className="w-3.5 h-3.5" />
+              <span>ดูโค้ด Apps Script สำหรับชีต</span>
+            </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <input
+              type="url"
+              placeholder="Google Apps Script Web App URL (https://script.google.com/macros/s/.../exec)"
+              value={webAppUrlInput}
+              onChange={(e) => setWebAppUrlInput(e.target.value)}
+              className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#1e3a8a]"
+            />
+            <button
+              onClick={handleSaveWebAppUrl}
+              disabled={isSavingUrl}
+              className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] rounded-lg cursor-pointer shrink-0 transition-colors"
+            >
+              {isSavingUrl ? 'กำลังบันทึก...' : 'บันทึก Webhook URL'}
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-600">
+            * หากระบุ Web App URL ผู้ใช้ทั่วไปที่ลงทะเบียนและแอดมินที่เพิ่มหลักสูตรจะส่งข้อมูลอัปเดตลง Google Sheets ได้ทันทีโดยไม่ต้องล็อกอิน หรือสามารถกดปุ่ม "เชื่อมต่อ Google Account" ด้านบนเพื่อเขียนลงชีตผ่าน Google Sheets API v4 ได้โดยตรง
+          </p>
+        </div>
+      )}
 
       {/* 2. Streamlined Header: Title + Connected Course + Sheet Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 shrink-0">
@@ -358,6 +540,65 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <span className="font-bold text-[#1e3a8a] font-mono tabular-nums">{count}</span>
               </span>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Apps Script Guide Modal */}
+      {showScriptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="rounded-2xl w-full max-w-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Code className="w-5 h-5 text-[#1e3a8a]" />
+                <h3 className="font-bold text-slate-900 text-sm">
+                  โค้ด Google Apps Script สำหรับใส่ในชีต (Webhook อัตโนมัติ)
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowScriptModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto space-y-3 text-xs text-slate-700">
+              <ol className="list-decimal list-inside space-y-1 font-medium text-slate-800">
+                <li>เปิด Google Sheet ของท่าน: <a href={`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit`} target="_blank" rel="noreferrer" className="text-[#1e3a8a] underline font-bold">คลิกที่นี่</a></li>
+                <li>ไปที่เมนู <b>ส่วนขยาย (Extensions)</b> &gt; <b>Apps Script</b></li>
+                <li>วางโค้ดด้านล่างนี้ลงไปแทนที่ของเดิม</li>
+                <li>กด <b>ทำให้ใช้งานได้ (Deploy)</b> &gt; <b>การทำให้ใช้งานได้รายการใหม่ (New deployment)</b></li>
+                <li>เลือกประเภท <b>เว็บแอป (Web app)</b>, ตั้งค่า <i>เข้าถึงได้โดย (Who has access)</i>: <b>ทุกคน (Anyone)</b></li>
+                <li>คัดลอก URL เว็บแอปที่ได้ มาใส่ในช่อง "ตั้งค่าซิงค์" ของแดชบอร์ดนี้</li>
+              </ol>
+
+              <div className="relative mt-2">
+                <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl font-mono text-[11px] overflow-x-auto max-h-60">
+                  {appsScriptCode}
+                </pre>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(appsScriptCode);
+                    setCopiedCode(true);
+                    setTimeout(() => setCopiedCode(false), 2000);
+                  }}
+                  className="absolute right-3 top-3 px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] shadow-xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedCode ? 'คัดลอกแล้ว!' : 'คัดลอกโค้ด'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                onClick={() => setShowScriptModal(false)}
+                className="px-4 py-1.5 text-xs font-bold rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 cursor-pointer"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
           </div>
         </div>
       )}

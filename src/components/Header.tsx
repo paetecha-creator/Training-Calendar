@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Search,
   X,
+  Menu,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { SPREADSHEET_ID } from '../services/sheetsService';
@@ -28,6 +29,7 @@ interface HeaderProps {
   onExitAdmin: () => void;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
+  onToggleMobileMenu?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -44,6 +46,7 @@ export const Header: React.FC<HeaderProps> = ({
   onExitAdmin,
   searchQuery = '',
   onSearchChange = () => {},
+  onToggleMobileMenu,
 }) => {
   // English uppercase month & year e.g. "OCTOBER 2026"
   const monthName = currentDate
@@ -51,46 +54,58 @@ export const Header: React.FC<HeaderProps> = ({
     .toUpperCase();
 
   return (
-    <header className="neu-card px-4 py-2.5 sticky top-0 z-30 shrink-0 w-full">
-      <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-3">
-        {/* Left: Website Title & Month Navigation */}
-        <div className="flex items-center gap-3 md:gap-5 flex-wrap">
+    <header className="neu-card px-3 sm:px-4 py-2 sm:py-2.5 sticky top-0 z-30 shrink-0 w-full">
+      <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-3">
+        {/* Left: Mobile Menu Toggle + Website Title & Month Navigation */}
+        <div className="flex items-center gap-2 sm:gap-3 md:gap-5 flex-wrap">
+          {onToggleMobileMenu && (
+            <button
+              type="button"
+              onClick={onToggleMobileMenu}
+              className="lg:hidden neu-btn p-2 rounded-xl text-slate-700 hover:text-[#1e3a8a] flex items-center gap-1.5 cursor-pointer shadow-xs"
+              title="เปิดเมนูหมวดหมู่และลงทะเบียน"
+            >
+              <Menu className="w-4 h-4 text-[#1e3a8a]" />
+              <span className="text-[11px] font-bold text-[#1e3a8a] hidden sm:inline">หมวดหมู่</span>
+            </button>
+          )}
+
           {/* Website Title: MONTHLY TRAINING CALENDAR */}
-          <div className="flex flex-col pr-3 shrink-0">
-            <span className="text-base md:text-lg font-extrabold text-[#0f172a] tracking-tight uppercase leading-tight">
+          <div className="flex flex-col pr-2 sm:pr-3 shrink-0">
+            <span className="text-sm sm:text-base md:text-lg font-extrabold text-[#0f172a] tracking-tight uppercase leading-tight">
               MONTHLY TRAINING CALENDAR
             </span>
-            <span className="text-[10px] font-extrabold text-[#1e3a8a] uppercase tracking-wider">
+            <span className="text-[9px] sm:text-[10px] font-extrabold text-[#1e3a8a] uppercase tracking-wider">
               Corporate Training Plan & Registration
             </span>
           </div>
 
           {/* Month Navigator (CSS selector 4: debossed inset well) */}
-          <div className="flex items-center gap-2.5">
-            <div className="flex items-center neu-inset rounded-xl p-1 shrink-0 gap-1">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center neu-inset rounded-xl p-0.5 sm:p-1 shrink-0 gap-1">
               <button
                 onClick={onPrevMonth}
                 title="Previous Month"
-                className="neu-btn p-1.5 rounded-lg cursor-pointer flex items-center justify-center text-slate-700 hover:text-[#1e3a8a]"
+                className="neu-btn p-1 sm:p-1.5 rounded-lg cursor-pointer flex items-center justify-center text-slate-700 hover:text-[#1e3a8a]"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <ChevronLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
               <button
                 onClick={onToday}
-                className="neu-btn px-2.5 py-1 text-xs font-bold text-slate-800 hover:text-[#1e3a8a] rounded-lg cursor-pointer"
+                className="neu-btn px-2 sm:px-2.5 py-1 text-[10px] sm:text-xs font-bold text-slate-800 hover:text-[#1e3a8a] rounded-lg cursor-pointer"
               >
                 TODAY
               </button>
               <button
                 onClick={onNextMonth}
                 title="Next Month"
-                className="neu-btn p-1.5 rounded-lg cursor-pointer flex items-center justify-center text-slate-700 hover:text-[#1e3a8a]"
+                className="neu-btn p-1 sm:p-1.5 rounded-lg cursor-pointer flex items-center justify-center text-slate-700 hover:text-[#1e3a8a]"
               >
-                <ChevronRight className="w-4 h-4" />
+                <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
               </button>
             </div>
 
-            <h1 className="text-base md:text-lg font-extrabold text-[#0f172a] tracking-tight uppercase whitespace-nowrap">
+            <h1 className="text-sm sm:text-base md:text-lg font-extrabold text-[#0f172a] tracking-tight uppercase whitespace-nowrap">
               {monthName}
             </h1>
           </div>
