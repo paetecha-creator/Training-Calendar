@@ -40,6 +40,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       dayNumber: number;
       isCurrentMonth: boolean;
       isSunday: boolean;
+      isSaturday: boolean;
       isToday: boolean;
     }> = [];
 
@@ -61,6 +62,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         dayNumber: d.getDate(),
         isCurrentMonth: false,
         isSunday: d.getDay() === 0,
+        isSaturday: d.getDay() === 6,
         isToday: dStr === todayStr,
       });
     }
@@ -77,6 +79,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         dayNumber: i,
         isCurrentMonth: true,
         isSunday: d.getDay() === 0,
+        isSaturday: d.getDay() === 6,
         isToday: dStr === todayStr,
       });
     }
@@ -94,6 +97,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         dayNumber: i,
         isCurrentMonth: false,
         isSunday: d.getDay() === 0,
+        isSaturday: d.getDay() === 6,
         isToday: dStr === todayStr,
       });
     }
@@ -122,32 +126,44 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   }, [events, selectedCategories, searchQuery]);
 
   const weekHeaders = [
-    { en: 'SUN', th: 'อา.' },
-    { en: 'MON', th: 'จ.' },
-    { en: 'TUE', th: 'อ.' },
-    { en: 'WED', th: 'พ.' },
-    { en: 'THU', th: 'พฤ.' },
-    { en: 'FRI', th: 'ศ.' },
-    { en: 'SAT', th: 'ส.' },
+    { en: 'SUN', th: 'อา.', thFull: 'อาทิตย์' },
+    { en: 'MON', th: 'จ.', thFull: 'จันทร์' },
+    { en: 'TUE', th: 'อ.', thFull: 'อังคาร' },
+    { en: 'WED', th: 'พ.', thFull: 'พุธ' },
+    { en: 'THU', th: 'พฤ.', thFull: 'พฤหัสฯ' },
+    { en: 'FRI', th: 'ศ.', thFull: 'ศุกร์' },
+    { en: 'SAT', th: 'ส.', thFull: 'เสาร์' },
   ];
 
   return (
     <div className="flex-1 h-full neu-card rounded-2xl p-2.5 sm:p-3 md:p-4 flex flex-col min-w-0 overflow-hidden">
-      {/* Month Days Header */}
-      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 md:gap-2 mb-1.5 sm:mb-2 shrink-0">
-        {weekHeaders.map((day, idx) => (
-          <div
-            key={day.en}
-            className={`text-center py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-[11px] font-bold tracking-wider ${
-              idx === 0
-                ? 'text-rose-600 bg-rose-50/80 border border-rose-200/80 shadow-2xs'
-                : 'text-slate-700 bg-slate-50/90 border border-slate-200/80 shadow-2xs'
-            }`}
-          >
-            <span className="sm:hidden">{day.th}</span>
-            <span className="hidden sm:inline">{day.en}</span>
-          </div>
-        ))}
+      {/* Month Days Header: High contrast, prominent, and distinct color-coded badges */}
+      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 md:gap-2 mb-2 sm:mb-2.5 shrink-0">
+        {weekHeaders.map((day, idx) => {
+          const isSun = idx === 0;
+          const isSat = idx === 6;
+
+          return (
+            <div
+              key={day.en}
+              className={`text-center py-1.5 sm:py-2.5 px-1 rounded-xl transition-all flex flex-col items-center justify-center select-none shadow-[2px_2px_6px_rgba(0,0,0,0.06),-2px_-2px_6px_rgba(255,255,255,0.9)] ${
+                isSun
+                  ? 'bg-gradient-to-b from-rose-50 via-rose-100/80 to-rose-50 text-rose-700 border-2 border-rose-300 ring-1 ring-rose-200/60 shadow-xs'
+                  : isSat
+                  ? 'bg-gradient-to-b from-purple-50 via-purple-100/70 to-purple-50 text-purple-700 border-2 border-purple-300 ring-1 ring-purple-200/50 shadow-xs'
+                  : 'bg-gradient-to-b from-white via-slate-50 to-slate-100/90 text-slate-900 border-2 border-slate-300/90 shadow-xs hover:border-[#1e3a8a]/50'
+              }`}
+            >
+              <span className="text-xs sm:text-sm md:text-base font-black tracking-wider leading-none">
+                {day.en}
+              </span>
+              <span className="text-[10px] sm:text-[11px] font-extrabold mt-1 leading-none tracking-tight opacity-90">
+                <span className="sm:hidden">{day.th}</span>
+                <span className="hidden sm:inline">{day.thFull}</span>
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       {/* Calendar Matrix Grid: Uniform row height with scrollable course items per day */}
@@ -179,17 +195,23 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               } ${isAdmin ? 'cursor-pointer hover:border-[#1e3a8a]/60' : ''}`}
             >
               {/* Day Number Header: Always prominent, crisp, and clearly separated from event chips */}
-              <div className="flex items-center justify-between w-full pb-1 mb-1 border-b border-slate-200/60 shrink-0 z-10 bg-inherit">
+              <div className="flex items-center justify-between w-full pb-1.5 mb-1.5 border-b-2 border-slate-200/80 shrink-0 z-10 bg-inherit">
                 <div className="flex items-center gap-1.5">
                   <span
-                    className={`text-xs md:text-sm font-black flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-lg transition-all shadow-xs shrink-0 ${
+                    className={`text-xs sm:text-sm font-black flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg transition-all shadow-xs shrink-0 ${
                       day.isToday
-                        ? 'bg-gradient-to-r from-[#1e3a8a] to-[#172554] text-white font-black ring-2 ring-[#1e3a8a]/30 shadow-sm'
+                        ? 'bg-gradient-to-br from-[#1e3a8a] to-[#0f172a] text-white border-2 border-[#1e3a8a] ring-2 ring-blue-300/80 font-black shadow-md'
                         : day.isSunday
-                        ? 'text-rose-600 font-extrabold bg-rose-50 border border-rose-200'
+                        ? day.isCurrentMonth
+                          ? 'text-rose-700 font-black bg-rose-50 border-2 border-rose-300 shadow-2xs'
+                          : 'text-rose-400 font-bold bg-rose-50/50 border border-rose-200/60 opacity-60'
+                        : day.isSaturday
+                        ? day.isCurrentMonth
+                          ? 'text-purple-700 font-black bg-purple-50 border-2 border-purple-200 shadow-2xs'
+                          : 'text-purple-400 font-bold bg-purple-50/50 border border-purple-200/60 opacity-60'
                         : day.isCurrentMonth
-                        ? 'text-slate-900 font-black bg-slate-100 border border-slate-300'
-                        : 'text-slate-400 font-bold opacity-50'
+                        ? 'text-slate-900 font-black bg-slate-100 border-2 border-slate-300 shadow-2xs'
+                        : 'text-slate-400 font-bold bg-slate-50 border border-slate-200 opacity-55'
                     }`}
                   >
                     {day.dayNumber}
