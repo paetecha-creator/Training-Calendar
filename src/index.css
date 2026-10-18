@@ -208,3 +208,23 @@ html, body, #root {
 .btn-attention {
   animation: pulseNavyGlow 2.5s infinite ease-in-out;
 }
+
+/* Sleek Day Courses Scrollbar for smooth mouse scrolling */
+.day-courses-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(30, 58, 138, 0.4) transparent;
+}
+.day-courses-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.day-courses-scroll::-webkit-scrollbar-track {
+  background: rgba(226, 232, 240, 0.4);
+  border-radius: 9999px;
+}
+.day-courses-scroll::-webkit-scrollbar-thumb {
+  background: rgba(30, 58, 138, 0.35);
+  border-radius: 9999px;
+}
+.day-courses-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(30, 58, 138, 0.75);
+}

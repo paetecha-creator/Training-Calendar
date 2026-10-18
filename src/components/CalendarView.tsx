@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import { TrainingEvent } from '../types';
-import { Clock } from 'lucide-react';
+import { Clock, ChevronDown } from 'lucide-react';
 
 interface CalendarViewProps {
   currentDate: Date;
@@ -150,8 +150,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         ))}
       </div>
 
-      {/* Calendar Matrix Grid: Expands rows dynamically when multiple courses occur on the same day */}
-      <div className="grid grid-cols-7 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto p-1.5 auto-rows-auto">
+      {/* Calendar Matrix Grid: Uniform row height with scrollable course items per day */}
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto p-1.5 [grid-auto-rows:minmax(145px,1fr)]">
         {calendarDays.map((day) => {
           // Find events on this date
           const dayEvents = filteredEvents.filter((ev) => {
@@ -168,7 +168,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   onAddEventOnDate(day.dateStr);
                 }
               }}
-              className={`min-h-[120px] sm:min-h-[140px] md:min-h-[155px] rounded-xl p-1.5 sm:p-2 flex flex-col justify-start relative overflow-hidden transition-all group select-none shadow-[2px_2px_6px_rgba(0,0,0,0.07),-2px_-2px_6px_rgba(255,255,255,0.95)] ${
+              className={`h-[145px] sm:h-[165px] md:h-[185px] rounded-xl p-1.5 sm:p-2 flex flex-col justify-start relative overflow-hidden transition-all group select-none shadow-[2px_2px_6px_rgba(0,0,0,0.07),-2px_-2px_6px_rgba(255,255,255,0.95)] ${
                 day.isToday
                   ? 'bg-gradient-to-b from-[#f8fafc] to-[#eef2f6] border-2 border-[#1e3a8a] ring-2 ring-[#1e3a8a]/20 shadow-[3px_3px_8px_rgba(30,58,138,0.18),-2px_-2px_6px_rgba(255,255,255,1)]'
                   : hasMultipleCourses
@@ -179,7 +179,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               } ${isAdmin ? 'cursor-pointer hover:border-[#1e3a8a]/60' : ''}`}
             >
               {/* Day Number Header: Always prominent, crisp, and clearly separated from event chips */}
-              <div className="flex items-center justify-between w-full pb-1 mb-1.5 border-b border-slate-200/60 shrink-0">
+              <div className="flex items-center justify-between w-full pb-1 mb-1 border-b border-slate-200/60 shrink-0 z-10 bg-inherit">
                 <div className="flex items-center gap-1.5">
                   <span
                     className={`text-xs md:text-sm font-black flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-lg transition-all shadow-xs shrink-0 ${
@@ -197,10 +197,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
                   {hasMultipleCourses && (
                     <span
-                      className="px-1.5 py-0.5 rounded text-[9px] md:text-[10px] font-black bg-[#1e3a8a] text-white shadow-2xs whitespace-nowrap"
-                      title={`มี ${dayEvents.length} หลักสูตรในวันนี้`}
+                      className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] md:text-[10px] font-black bg-[#1e3a8a] text-white shadow-2xs whitespace-nowrap"
+                      title="มีหลายหลักสูตร เลื่อนเมาส์ ขึ้น-ลง เพื่อดูคอร์สทั้งหมด"
                     >
-                      {dayEvents.length} คอร์ส
+                      <ChevronDown className="w-2.5 h-2.5 animate-bounce" />
+                      <span>{dayEvents.length} คอร์ส</span>
                     </span>
                   )}
                 </div>
@@ -215,8 +216,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 )}
               </div>
 
-              {/* Day Event Chips: Display ALL courses completely, expanding cell height naturally */}
-              <div className="space-y-1.5 w-full flex-1 flex flex-col">
+              {/* Day Event Chips: Scrollable with mouse wheel up/down when multiple courses occur */}
+              <div
+                className="space-y-1.5 w-full flex-1 min-h-0 overflow-y-auto overscroll-contain pr-0.5 day-courses-scroll focus:outline-none"
+                tabIndex={0}
+                onWheel={(e) => {
+                  e.stopPropagation();
+                }}
+                title={hasMultipleCourses ? 'ใช้เมาส์เลื่อนขึ้น-ลง เพื่อดูหลักสูตรอื่นๆ ในวันนี้' : undefined}
+              >
                 {dayEvents.map((ev) => {
                   if (ev.isHoliday) {
                     return (

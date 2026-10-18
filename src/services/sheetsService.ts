@@ -1189,6 +1189,109 @@ export async function clearRegistrationSheet(
   }
 }
 
+// 6b. Delete Specific Attendees from Registration Sheet
+export async function deleteRegistrationAttendees(
+  sheetName: string,
+  attendeesToDelete: AttendeeRow[],
+  accessToken?: string | null
+): Promise<{ success: boolean; remainingCount: number; error?: string }> {
+  const currentAttendees = getLocalAttendees(sheetName);
+
+  // Match by code, names, and rowIndex
+  const deleteKeySet = new Set(
+    attendeesToDelete.map(
+      (a) => `${a.code || ''}|${a.fname || ''}|${a.lname || ''}|${a.rowIndex ?? ''}`
+    )
+  );
+
+  const remaining = currentAttendees.filter((a) => {
+    const key = `${a.code || ''}|${a.fname || ''}|${a.lname || ''}|${a.rowIndex ?? ''}`;
+    if (deleteKeySet.has(key)) return false;
+    const matched = attendeesToDelete.some(
+      (del) =>
+        del.code &&
+        del.code === a.code &&
+        del.fname.trim() === a.fname.trim() &&
+        del.lname.trim() === a.lname.trim()
+    );
+    return !matched;
+  });
+
+  const updatedRemaining = remaining.map((row, idx) => ({
+    ...row,
+    rowIndex: 5 + idx,
+  }));
+
+  saveLocalAttendees(sheetName, updatedRemaining);
+
+  // Send webhook sync to Apps Script
+  sendToSheetsWebApp('delete_attendees', {
+    formSheet: sheetName,
+    deleted: attendeesToDelete,
+    remaining: updatedRemaining,
+  });
+
+  // Persistent Firestore sync
+  try {
+    const sheetAttendeesRef = doc(db, 'form_attendees', sheetName);
+    await setDoc(
+      sheetAttendeesRef,
+      {
+        attendees: updatedRemaining,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('Firestore delete attendees update warning:', err);
+  }
+
+  // Sync to Google Sheets if OAuth token available
+  if (accessToken) {
+    try {
+      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!B5:M100:clear`;
+      await fetch(clearUrl, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+
+      if (updatedRemaining.length > 0) {
+        const sheetRows = updatedRemaining.map((d) => [
+          d.code || '',
+          d.sex || 'Mr.',
+          d.fname || '',
+          d.lname || '',
+          d.dept || '',
+          d.pos || '',
+          d.exp || '',
+          d.app || '',
+          d.rem || '',
+          d.submitterName || '',
+          d.submitterDept || '',
+          d.submitterPhone || '',
+        ]);
+
+        const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!B5:M${
+          4 + sheetRows.length
+        }?valueInputOption=USER_ENTERED`;
+        await fetch(writeUrl, {
+          method: 'PUT',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ values: sheetRows }),
+        });
+      }
+    } catch (err) {
+      console.error('Google Sheets delete API sync error:', err);
+      return { success: true, remainingCount: updatedRemaining.length, error: (err as Error).message };
+    }
+  }
+
+  return { success: true, remainingCount: updatedRemaining.length };
+}
+
 // 7. Auto-Flush Pending Sync Queue
 export async function flushPendingSyncQueue(
   accessToken?: string | null
