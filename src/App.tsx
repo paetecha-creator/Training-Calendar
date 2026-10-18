@@ -6,6 +6,7 @@ import {
   deleteEventFromSheet,
   submitRegistrationData,
   flushPendingSyncQueue,
+  initSheetsConfig,
 } from './services/sheetsService';
 import { initAuth, googleSignIn, logoutGoogle, db } from './services/firebase';
 import { onSnapshot, collection } from 'firebase/firestore';
@@ -94,6 +95,7 @@ export default function App() {
 
   // Continuous sync: Fetch on mount, poll every 25 seconds, sync on window focus, and real-time Firestore listener
   useEffect(() => {
+    initSheetsConfig();
     loadEvents(accessToken);
 
     const intervalId = setInterval(() => {

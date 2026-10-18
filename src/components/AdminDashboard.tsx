@@ -4,6 +4,9 @@ import {
   getRegistrationAttendees,
   clearRegistrationSheet,
   deleteRegistrationAttendees,
+  forcePushSheetToGoogleSheets,
+  testSheetsWebApp,
+  initSheetsConfig,
   SPREADSHEET_ID,
   getSheetsWebAppUrl,
   setSheetsWebAppUrl,
@@ -27,6 +30,9 @@ import {
   KeyRound,
   Check,
   Copy,
+  AlertTriangle,
+  Send,
+  Zap,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -69,10 +75,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [showSyncSettings, setShowSyncSettings] = useState(false);
   const [webAppUrlInput, setWebAppUrlInput] = useState(getSheetsWebAppUrl());
   const [isSavingUrl, setIsSavingUrl] = useState(false);
+  const [isTestingUrl, setIsTestingUrl] = useState(false);
+  const [isPushingSheet, setIsPushingSheet] = useState(false);
   const [pendingCount, setPendingCount] = useState(getPendingSyncQueue().length);
   const [isFlushing, setIsFlushing] = useState(false);
   const [showScriptModal, setShowScriptModal] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+
+  // Load sheets configuration on mount
+  useEffect(() => {
+    initSheetsConfig().then((url) => {
+      if (url) {
+        setWebAppUrlInput(url);
+      }
+    });
+  }, []);
 
   // Unique key for each attendee
   const getAttendeeKey = (a: AttendeeRow, idx: number) => {
@@ -116,7 +133,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleClearData = async () => {
     if (
       !window.confirm(
-        `คำเตือน: คุณต้องการล้างข้อมูลผู้ลงทะเบียนทั้งหมดใน "${selectedSheet}" ใช่หรือไม่? (การกระทำนี้ไม่สามารถย้อนกลับได้)`
+        `คำเตือน: คุณต้องการล้างข้อมูลผู้ลงทะเบียนทั้งหมดใน "${selectedSheet}" ใช่หรือไม่? (การกระทำนี้จะล้างข้อมูลแถว 5-100 ใน Google Sheets ด้วย)`
       )
     ) {
       return;
@@ -124,16 +141,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     setIsLoading(true);
     try {
-      const success = await clearRegistrationSheet(selectedSheet, accessToken);
-      if (success) {
+      const res = await clearRegistrationSheet(selectedSheet, accessToken);
+      if (res.success) {
         setAttendees([]);
         setSelectedAttendeeKeys(new Set());
         setStatusMessage({
-          text: `ล้างข้อมูลใน "${selectedSheet}" เรียบร้อยแล้ว`,
+          text: `ล้างข้อมูลใน "${selectedSheet}" และอัปเดตส่งข้อมูลไปยัง Google Sheets เรียบร้อยแล้ว`,
           type: 'success',
         });
       } else {
-        setStatusMessage({ text: 'ล้างข้อมูลไม่สำเร็จ', type: 'error' });
+        setStatusMessage({ text: res.error || 'ล้างข้อมูลไม่สำเร็จ', type: 'error' });
       }
     } catch (err) {
       console.error(err);
@@ -242,18 +259,66 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [attendees]);
 
-  const handleSaveWebAppUrl = () => {
+  const handleSaveWebAppUrl = async () => {
+    if (!webAppUrlInput.trim()) {
+      setStatusMessage({ text: 'กรุณากรอก Web App URL ที่ได้จาก Google Apps Script', type: 'error' });
+      return;
+    }
     setIsSavingUrl(true);
     try {
-      setSheetsWebAppUrl(webAppUrlInput);
+      await setSheetsWebAppUrl(webAppUrlInput);
       setStatusMessage({
-        text: 'บันทึก Google Apps Script Web App URL เรียบร้อยแล้ว ระบบจะส่งข้อมูลลงชีตผ่าน Webhook อัตโนมัติ',
+        text: 'บันทึก Google Apps Script Web App URL และซิงค์การตั้งค่าเรียบร้อยแล้ว ทุกคนส่งข้อมูลลงชีตได้ทันที',
         type: 'success',
       });
     } catch {
       setStatusMessage({ text: 'บันทึก URL ไม่สำเร็จ', type: 'error' });
     } finally {
       setIsSavingUrl(false);
+    }
+  };
+
+  const handleTestWebAppUrl = async () => {
+    setIsTestingUrl(true);
+    try {
+      const res = await testSheetsWebApp(webAppUrlInput);
+      setStatusMessage({
+        text: res.message,
+        type: res.success ? 'success' : 'error',
+      });
+    } catch (e) {
+      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการทดสอบ: ' + (e as Error).message, type: 'error' });
+    } finally {
+      setIsTestingUrl(false);
+    }
+  };
+
+  const handleForcePushSheet = async () => {
+    if (
+      !window.confirm(
+        `ต้องการส่งข้อมูลผู้ลงทะเบียน ${attendees.length} คน ในชีต "${selectedSheet}" ขึ้น Google Sheets (ID: ${SPREADSHEET_ID}) ทันทีใช่หรือไม่?`
+      )
+    ) {
+      return;
+    }
+    setIsPushingSheet(true);
+    try {
+      const res = await forcePushSheetToGoogleSheets(selectedSheet, accessToken);
+      if (res.success) {
+        setStatusMessage({
+          text: `ส่งข้อมูลผู้ลงทะเบียน ${res.count} คน ขึ้น Google Sheets เรียบร้อยแล้ว`,
+          type: 'success',
+        });
+      } else {
+        setStatusMessage({
+          text: res.error || 'ส่งข้อมูลไม่สำเร็จ กรุณาตรวจสอบการตั้งค่า Web App URL',
+          type: 'error',
+        });
+      }
+    } catch (e) {
+      setStatusMessage({ text: 'เกิดข้อผิดพลาด: ' + (e as Error).message, type: 'error' });
+    } finally {
+      setIsPushingSheet(false);
     }
   };
 
@@ -274,42 +339,128 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  const appsScriptCode = `// Google Apps Script สำหรับ Tohoku Solutions Spreadsheet
+  const hasWebAppConfigured = Boolean(webAppUrlInput && webAppUrlInput.trim().startsWith('https://script.google.com'));
+
+  const appsScriptCode = `// Google Apps Script สำหรับชีต ID: 1gqp55Bp-HyDihtbHQGpyeVglHAXCQwXTxnefK8xVozs
+// รองรับการทำงานอัตโนมัติ 100% ไม่ต้องล็อกอิน Google
 function doPost(e) {
   try {
     var contents = JSON.parse(e.postData.contents);
     var ss = SpreadsheetApp.getActiveSpreadsheet();
     var action = contents.action;
 
+    // 1. ลงทะเบียนผู้เข้าอบรม (เขียนเริ่มจากแถวที่ 5 คอลัมน์ A ถึง M เสมอ)
     if (action === 'registration') {
       var sheet = ss.getSheetByName(contents.formSheet) || ss.insertSheet(contents.formSheet);
-      var rows = contents.data.map(function(d) {
+      
+      // นับจำนวนผู้ลงทะเบียนจริงจากคอลัมน์ B (Code) แถวที่ 5 เป็นต้นไป
+      var bValues = sheet.getRange("B5:B500").getValues();
+      var attendeeCount = 0;
+      for (var i = 0; i < bValues.length; i++) {
+        if (bValues[i][0] && String(bValues[i][0]).trim() !== "") {
+          attendeeCount++;
+        }
+      }
+      var startRow = 5 + attendeeCount;
+      
+      var rows = contents.data.map(function(d, idx) {
         return [
-          d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7], d[8] || '',
-          contents.submitterName, contents.submitterDept, contents.submitterPhone
+          String(attendeeCount + idx + 1), // Col A: No.
+          d[0] || '', // Col B: Code
+          d[1] || 'Mr.', // Col C: Sex
+          d[2] || '', // Col D: Name
+          d[3] || '', // Col E: Last Name
+          d[4] || '', // Col F: Dept
+          d[5] || '', // Col G: Position
+          d[6] || '', // Col H: Expectation
+          d[7] || '', // Col I: Apply
+          d[8] || '', // Col J: Remark
+          contents.submitterName || '', // Col K: ผู้ประสานงาน
+          contents.submitterDept || '', // Col L: ฝ่าย
+          contents.submitterPhone || '' // Col M: เบอร์ติดต่อ
         ];
       });
-      rows.forEach(function(r) {
-        sheet.appendRow(r);
-      });
+
+      sheet.getRange(startRow, 1, rows.length, 13).setValues(rows);
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', startRow: startRow, count: rows.length })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 2. ลบรายชื่อผู้ลงทะเบียนที่เลือก (ล้างแถว 5-500 และเขียนรายชื่อที่เหลือเริ่มจากแถวที่ 5)
+    if (action === 'delete_attendees') {
+      var sheet = ss.getSheetByName(contents.formSheet);
+      if (sheet) {
+        sheet.getRange("A5:M500").clearContent();
+        if (contents.remaining && contents.remaining.length > 0) {
+          var newRows = contents.remaining.map(function(d, idx) {
+            return [
+              String(idx + 1),
+              d.code || '',
+              d.sex || 'Mr.',
+              d.fname || '',
+              d.lname || '',
+              d.dept || '',
+              d.pos || '',
+              d.exp || '',
+              d.app || '',
+              d.rem || '',
+              d.submitterName || '',
+              d.submitterDept || '',
+              d.submitterPhone || ''
+            ];
+          });
+          sheet.getRange(5, 1, newRows.length, 13).setValues(newRows);
+        }
+      }
       return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
     }
 
-    if (action === 'save_event') {
-      var master = ss.getSheetByName('Master');
-      var ev = contents.event;
-      var row = [ev.id, ev.category, ev.title, ev.start, ev.end, ev.startTime, ev.endTime, ev.location, ev.description, ev.color, ev.status, ev.openDate, ev.closeDate, ev.formSheet];
-      var data = master.getDataRange().getValues();
-      var foundRow = -1;
-      for (var i = 1; i < data.length; i++) {
-        if (data[i][0] === ev.id) { foundRow = i + 1; break; }
-      }
-      if (foundRow > 0) {
-        master.getRange(foundRow, 1, 1, row.length).setValues([row]);
-      } else {
-        master.appendRow(row);
+    // 3. สั่งล้างข้อมูลทั้งหมดในชีต (เคลียร์แถว 5-500 โดยไม่แตะต้องส่วนหัว 4 แถวแรก)
+    if (action === 'clear_sheet') {
+      var sheet = ss.getSheetByName(contents.formSheet);
+      if (sheet) {
+        sheet.getRange("A5:M500").clearContent();
       }
       return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 4. บันทึก / แก้ไขหลักสูตรใน Master
+    if (action === 'save_event') {
+      var master = ss.getSheetByName('Master');
+      if (master) {
+        var ev = contents.event;
+        var row = [ev.id, ev.category, ev.title, ev.start, ev.end, ev.startTime, ev.endTime, ev.location, ev.description, ev.color, ev.status, ev.openDate, ev.closeDate, ev.formSheet];
+        var data = master.getDataRange().getValues();
+        var foundRow = -1;
+        for (var i = 1; i < data.length; i++) {
+          if (data[i][0] === ev.id) { foundRow = i + 1; break; }
+        }
+        if (foundRow > 0) {
+          master.getRange(foundRow, 1, 1, row.length).setValues([row]);
+        } else {
+          master.appendRow(row);
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 5. ลบหลักสูตรจาก Master
+    if (action === 'delete_event') {
+      var master = ss.getSheetByName('Master');
+      if (master) {
+        var data = master.getDataRange().getValues();
+        for (var i = 1; i < data.length; i++) {
+          if (data[i][0] === contents.eventId) {
+            master.getRange(i + 1, 1, 1, 14).clearContent();
+            break;
+          }
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // 6. ทดสอบการเชื่อมต่อ (Ping)
+    if (action === 'test') {
+      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'เชื่อมต่อ Google Sheets สำเร็จ' })).setMimeType(ContentService.MimeType.JSON);
     }
 
     return ContentService.createTextOutput(JSON.stringify({ status: 'ok' })).setMimeType(ContentService.MimeType.JSON);
@@ -324,26 +475,72 @@ function doPost(e) {
       <div className="mb-3 py-2 px-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-center justify-between text-xs shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2.5 flex-wrap min-w-0">
           <div className="flex items-center gap-2 font-bold text-slate-800 shrink-0">
-            <span className={`w-2.5 h-2.5 rounded-full ${accessToken ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'} shadow-xs`}></span>
+            <span
+              className={`w-2.5 h-2.5 rounded-full ${
+                hasWebAppConfigured || accessToken ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+              } shadow-xs`}
+            ></span>
             <Database className="w-3.5 h-3.5 text-[#1e3a8a]" />
             <span>
-              {accessToken ? 'Google Sheets Sync: เชื่อมต่อสด (พร้อมเขียนอัตโนมัติ)' : 'Google Sheets: อ่านข้อมูลสด (GViz)'}
+              {hasWebAppConfigured
+                ? 'Google Sheets Auto-Sync: เชื่อมต่อ Webhook แล้ว (ส่งและลบข้อมูลลงชีตจริงอัตโนมัติ)'
+                : accessToken
+                ? 'Google Sheets: เชื่อมต่อด้วยบัญชี Google แล้ว'
+                : 'Google Sheets: โหมดอ่านสด (ต้องระบุ Webhook เพื่อเปิดส่งข้อมูลเข้าชีตอัตโนมัติ)'}
             </span>
           </div>
 
+          {!accessToken && onGoogleSignIn && (
+            <button
+              onClick={async () => {
+                try {
+                  await onGoogleSignIn();
+                } catch (e) {
+                  console.error(e);
+                }
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
+              title="เชื่อมต่อด้วย Google OAuth สำรอง"
+            >
+              <KeyRound className="w-3 h-3 text-[#1e3a8a]" />
+              <span>เข้าสู่ระบบ Google (ทางเลือกเสริม)</span>
+            </button>
+          )}
+
           {pendingCount > 0 && (
             <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-              ค้างส่ง: {pendingCount} รายการ
+              ค้างส่งชีต: {pendingCount} รายการ
             </span>
           )}
         </div>
 
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
           {/* Real-time Automated Background Sync Status */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded-lg shadow-2xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>ซิงค์ข้อมูลอัตโนมัติตลอดเวลา</span>
+          <div
+            className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg shadow-2xs ${
+              hasWebAppConfigured
+                ? 'text-emerald-800 bg-emerald-50 border border-emerald-200/80'
+                : 'text-amber-800 bg-amber-50 border border-amber-300'
+            }`}
+          >
+            <span
+              className={`w-2 h-2 rounded-full ${
+                hasWebAppConfigured ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+              }`}
+            ></span>
+            <span>{hasWebAppConfigured ? 'Auto-Sync เปิดใช้งาน' : 'ยังไม่ได้เชื่อมต่อ Webhook'}</span>
           </div>
+
+          {/* Force Push Button */}
+          <button
+            onClick={handleForcePushSheet}
+            disabled={isPushingSheet}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-[#1e3a8a] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg cursor-pointer transition-colors"
+            title="ส่งข้อมูลผู้ลงทะเบียนทั้งหมดในชีตนี้ขึ้น Google Sheets ทันที"
+          >
+            <Send className={`w-3 h-3 ${isPushingSheet ? 'animate-bounce' : ''}`} />
+            <span>{isPushingSheet ? 'กำลังส่ง...' : 'ส่งชีตนี้ขึ้น Google Sheets'}</span>
+          </button>
 
           {pendingCount > 0 && (
             <button
@@ -362,7 +559,7 @@ function doPost(e) {
             title="ตั้งค่า Webhook และดูโค้ด Apps Script"
           >
             <Settings className="w-3 h-3 text-[#1e3a8a]" />
-            <span className="hidden sm:inline">ตั้งค่าซิงค์</span>
+            <span>{hasWebAppConfigured ? 'ตั้งค่าซิงค์' : '⚠️ เชื่อมต่อ Webhook'}</span>
           </button>
 
           <button
@@ -386,13 +583,55 @@ function doPost(e) {
         </div>
       </div>
 
+      {/* Prominent Auto-Sync Setup Banner if Web App URL is NOT configured */}
+      {!hasWebAppConfigured && (
+        <div className="mb-3 p-3.5 rounded-xl border border-amber-300 bg-amber-50/90 text-xs shrink-0 shadow-xs space-y-2.5">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 text-amber-900 font-bold">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                ข้อมูลยังไม่ถูกส่งไปยัง Google Sheets ID: {SPREADSHEET_ID} เนื่องจากยังไม่ได้ระบุ Web App URL
+              </span>
+            </div>
+            <button
+              onClick={() => setShowScriptModal(true)}
+              className="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] cursor-pointer shrink-0 flex items-center gap-1"
+            >
+              <Code className="w-3.5 h-3.5" />
+              <span>เปิดดูโค้ด Apps Script</span>
+            </button>
+          </div>
+
+          <p className="text-amber-800 text-[11px] leading-relaxed">
+            เพื่อให้ระบบส่งข้อมูลการลงทะเบียนและอัปเดตการลบรายชื่อเข้าชีตได้อัตโนมัติ 100% โดยที่ผู้ลงทะเบียนและแอดมินไม่ต้องกดเข้าสู่ระบบด้วย Google:
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            <input
+              type="url"
+              placeholder="วาง Google Apps Script Web App URL (https://script.google.com/macros/s/.../exec)"
+              value={webAppUrlInput}
+              onChange={(e) => setWebAppUrlInput(e.target.value)}
+              className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#1e3a8a]"
+            />
+            <button
+              onClick={handleSaveWebAppUrl}
+              disabled={isSavingUrl}
+              className="px-4 py-1.5 text-xs font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] rounded-lg cursor-pointer shrink-0 shadow-xs transition-colors"
+            >
+              {isSavingUrl ? 'กำลังบันทึก...' : 'บันทึกและเปิดใช้งาน Auto-Sync ทันที'}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Collapsible Sync Settings Panel */}
       {showSyncSettings && (
         <div className="mb-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50/60 text-xs shrink-0 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="font-bold text-slate-900 flex items-center gap-1.5">
               <UploadCloud className="w-4 h-4 text-[#1e3a8a]" />
-              ช่องทางการซิงค์ข้อมูลลง Google Sheets อัตโนมัติ (Automated 2-Way Sync)
+              ตั้งค่า Google Apps Script Web App (ชีต ID: {SPREADSHEET_ID})
             </span>
             <button
               onClick={() => setShowScriptModal(true)}
@@ -418,12 +657,20 @@ function doPost(e) {
             >
               {isSavingUrl ? 'กำลังบันทึก...' : 'บันทึก Webhook URL'}
             </button>
+            <button
+              onClick={handleTestWebAppUrl}
+              disabled={isTestingUrl || !webAppUrlInput}
+              className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg cursor-pointer shrink-0 transition-colors"
+            >
+              {isTestingUrl ? 'กำลังทดสอบ...' : 'ทดสอบการเชื่อมต่อ'}
+            </button>
           </div>
           <p className="text-[11px] text-slate-600">
-            * ระบบทำงานแบบ Real-time Auto-Sync ตลอดเวลา ข้อมูลหลักสูตรและการลงทะเบียนจะส่งและซิงค์ข้อมูลอัตโนมัติทันที ผู้ใช้งานเว็บทั่วไปและแอดมินไม่ต้องกดล็อกอิน Google หรือดำเนินการใดๆ เพิ่มเติม
+            * ระบบทำงานแบบ Real-time Auto-Sync ตลอดเวลา เมื่อบันทึกแล้วการลงทะเบียนและการลบรายชื่อจะส่งตรงเข้าชีตทันที ผู้ใช้งานเว็บทั่วไปและแอดมินไม่ต้องกดล็อกอิน Google
           </p>
         </div>
       )}
+
 
       {/* 2. Streamlined Header: Title + Connected Course + Sheet Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 shrink-0">

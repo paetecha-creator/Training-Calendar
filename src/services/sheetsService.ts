@@ -195,41 +195,8 @@ const INITIAL_DEMO_EVENTS: TrainingEvent[] = [
   },
 ];
 
-// Demo attendees data for register sheets
-const INITIAL_DEMO_ATTENDEES: Record<string, AttendeeRow[]> = {
-  'Register-2': [
-    {
-      code: 'EMP-0142',
-      sex: 'Mr.',
-      fname: 'สมชาย',
-      lname: 'ใจดี',
-      dept: 'ฝ่ายการผลิต (Production)',
-      pos: 'Supervisor',
-      exp: 'ต้องการนำทักษะการวิเคราะห์ข้อมูลมาพัฒนาแดชบอร์ดติดตาม KPI สายการผลิต',
-      app: 'สร้าง Real-time Performance Tracking ให้ทีมงาน',
-      rem: 'สะดวกเข้าร่วมตลอดหลักสูตร',
-      submitterName: 'สุรชัย มั่นคง',
-      submitterDept: 'ฝ่ายบุคคล',
-      submitterPhone: '081-234-5678',
-      rowIndex: 5,
-    },
-    {
-      code: 'EMP-0288',
-      sex: 'Ms.',
-      fname: 'วิภาดา',
-      lname: 'สุขเจริญ',
-      dept: 'ฝ่ายวางแผนและโลจิสติกส์',
-      pos: 'Data Analyst',
-      exp: 'เพิ่มความเชี่ยวชาญการเขียน DAX และเชื่อมต่อข้อมูลจากหลายแหล่ง',
-      app: 'ปรับปรุงรายงาน Inventory Optimization ประจำสัปดาห์',
-      rem: '-',
-      submitterName: 'สุรชัย มั่นคง',
-      submitterDept: 'ฝ่ายบุคคล',
-      submitterPhone: '081-234-5678',
-      rowIndex: 6,
-    },
-  ],
-};
+// Demo attendees data for register sheets (Initialized empty to ensure only real Google Sheets data is used)
+const INITIAL_DEMO_ATTENDEES: Record<string, AttendeeRow[]> = {};
 
 function getLocalEvents(): TrainingEvent[] {
   try {
@@ -267,30 +234,73 @@ function saveLocalAttendees(sheetName: string, attendees: AttendeeRow[]) {
   }
 }
 
+// In-memory cache for Web App URL
+let inMemoryWebAppUrl = '';
+
 // Google Apps Script Web App URL for 100% free anonymous updates
 export function getSheetsWebAppUrl(): string {
   try {
-    return (
+    if (inMemoryWebAppUrl) return inMemoryWebAppUrl;
+    const stored =
       localStorage.getItem('training_sheets_webapp_url') ||
       (import.meta.env.VITE_SHEETS_WEBAPP_URL as string) ||
-      ''
-    );
+      '';
+    inMemoryWebAppUrl = stored.trim();
+    return inMemoryWebAppUrl;
   } catch {
-    return '';
+    return inMemoryWebAppUrl || '';
   }
 }
 
-export function setSheetsWebAppUrl(url: string): void {
+export async function setSheetsWebAppUrl(url: string): Promise<void> {
+  const cleanUrl = url.trim();
+  inMemoryWebAppUrl = cleanUrl;
   try {
-    localStorage.setItem('training_sheets_webapp_url', url.trim());
+    localStorage.setItem('training_sheets_webapp_url', cleanUrl);
   } catch (e) {
     console.error(e);
   }
+
+  // Persist to Cloud Firestore settings so all users, visitors, and devices share the sync URL!
+  try {
+    await setDoc(
+      doc(db, 'settings', 'sheets_config'),
+      {
+        webAppUrl: cleanUrl,
+        spreadsheetId: SPREADSHEET_ID,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('Could not save webAppUrl to Firestore:', err);
+  }
+}
+
+/**
+ * Initializes and syncs the Google Apps Script Web App configuration from Cloud Firestore
+ */
+export async function initSheetsConfig(): Promise<string> {
+  try {
+    const configSnap = await getDoc(doc(db, 'settings', 'sheets_config'));
+    if (configSnap.exists()) {
+      const data = configSnap.data();
+      if (data?.webAppUrl) {
+        const url = String(data.webAppUrl).trim();
+        inMemoryWebAppUrl = url;
+        localStorage.setItem('training_sheets_webapp_url', url);
+        return url;
+      }
+    }
+  } catch (err) {
+    console.warn('Firestore sheets_config load warning:', err);
+  }
+  return getSheetsWebAppUrl();
 }
 
 export interface PendingSyncItem {
   id: string;
-  type: 'save_event' | 'delete_event' | 'registration';
+  type: 'save_event' | 'delete_event' | 'registration' | 'clear_sheet' | 'delete_attendees';
   payload: any;
   timestamp: number;
 }
@@ -327,27 +337,71 @@ export function clearPendingSyncQueue(): void {
   }
 }
 
-export async function sendToSheetsWebApp(action: string, payload: any): Promise<boolean> {
+export async function sendToSheetsWebApp(
+  action: string,
+  payload: any
+): Promise<{ success: boolean; error?: string }> {
   const url = getSheetsWebAppUrl();
-  if (!url) return false;
+  if (!url) {
+    console.warn(`[Sheets Auto-Sync] Cannot send "${action}": Web App URL is not set.`);
+    return {
+      success: false,
+      error: 'ยังไม่ได้ระบุ Google Apps Script Web App URL สำหรับซิงค์ข้อมูลลง Google Sheets',
+    };
+  }
+
   try {
+    const bodyStr = JSON.stringify({
+      action,
+      ...payload,
+      spreadsheetId: SPREADSHEET_ID,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Use Content-Type: text/plain to avoid CORS preflight (OPTIONS) which Apps Script does not support
     await fetch(url, {
       method: 'POST',
-      mode: 'no-cors',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'text/plain;charset=utf-8',
+      },
+      body: bodyStr,
+      mode: 'no-cors',
+    });
+
+    console.log(`[Sheets Auto-Sync] Successfully dispatched "${action}" to Google Sheets Web App.`);
+    return { success: true };
+  } catch (err: unknown) {
+    console.error(`[Sheets Auto-Sync] Error dispatching "${action}":`, err);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * Test connectivity to Google Apps Script Web App
+ */
+export async function testSheetsWebApp(
+  testUrl?: string
+): Promise<{ success: boolean; message: string }> {
+  const targetUrl = testUrl ? testUrl.trim() : getSheetsWebAppUrl();
+  if (!targetUrl) {
+    return { success: false, message: 'กรุณาระบุ Web App URL ก่อนกดทดสอบ' };
+  }
+  try {
+    await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=utf-8',
       },
       body: JSON.stringify({
-        action,
-        ...payload,
+        action: 'test',
         spreadsheetId: SPREADSHEET_ID,
         timestamp: new Date().toISOString(),
       }),
+      mode: 'no-cors',
     });
-    return true;
-  } catch (err) {
-    console.warn('Error sending to WebApp endpoint:', err);
-    return false;
+    return { success: true, message: 'ส่งสัญญาณทดสอบไปยัง Google Apps Script สำเร็จ' };
+  } catch (err: unknown) {
+    return { success: false, message: (err as Error).message };
   }
 }
 
@@ -372,8 +426,11 @@ export function checkAndCloseExpiredCourses(events: TrainingEvent[]): TrainingEv
  * Dynamic JSONP / Fetch loader for public Google Sheets GViz endpoint.
  * Allows ALL visitors to read real-time data from spreadsheet 1gqp55Bp-HyDihtbHQGpyeVglHAXCQwXTxnefK8xVozs
  * without needing Google login or OAuth credentials.
+ * Supports optional `range` (e.g. "A5:M500") and headers=0 to strictly query starting from Row 5.
  */
-export async function fetchSheetGvizData(sheetName: string): Promise<any> {
+export async function fetchSheetGvizData(sheetName: string, range?: string): Promise<any> {
+  const rangeQuery = range ? `&range=${encodeURIComponent(range)}&headers=0` : '';
+
   if (typeof window !== 'undefined' && typeof document !== 'undefined') {
     return new Promise((resolve, reject) => {
       const callbackName = 'gviz_cb_' + Math.random().toString(36).substring(2, 9);
@@ -402,7 +459,7 @@ export async function fetchSheetGvizData(sheetName: string): Promise<any> {
       const script = document.createElement('script');
       script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&sheet=${encodeURIComponent(
         sheetName
-      )}&t=${Date.now()}`;
+      )}${rangeQuery}&t=${Date.now()}`;
       script.onerror = (err) => {
         if (resolved) return;
         resolved = true;
@@ -418,7 +475,7 @@ export async function fetchSheetGvizData(sheetName: string): Promise<any> {
   const res = await fetch(
     `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
       sheetName
-    )}&t=${Date.now()}`
+    )}${rangeQuery}&t=${Date.now()}`
   );
   const text = await res.text();
   const jsonText = text.replace(/^[^{]*/, '').replace(/[^}]*$/, '');
@@ -931,18 +988,20 @@ export async function submitRegistrationData(
     return { success: true, insertedIndices: newInsertedIndices };
   }
 
-  // Write to Google Sheets (Column B to M, from row 5 onward)
   try {
-    const sheetRows = data.map((d) => [
-      d[0], // Code
-      d[1], // Sex
-      d[2], // Name
-      d[3], // LastName
-      d[4], // Dept
-      d[5], // Pos
-      d[6], // Exp
-      d[7], // App
-      d[8] || '', // Rem
+    // Write to Google Sheets (Column A to M, starting at row 5)
+    const targetStartRow = 5 + currentAttendees.length;
+    const sheetRows = data.map((d, idx) => [
+      String(currentAttendees.length + idx + 1), // Col A: No.
+      d[0], // Col B: Code
+      d[1], // Col C: Sex
+      d[2], // Col D: Name
+      d[3], // Col E: LastName
+      d[4], // Col F: Dept
+      d[5], // Col G: Pos
+      d[6], // Col H: Exp
+      d[7], // Col I: App
+      d[8] || '', // Col J: Rem
       submitterName,
       submitterDept,
       submitterPhone,
@@ -951,7 +1010,7 @@ export async function submitRegistrationData(
     if (isEditMode && rowIndices && rowIndices.length > 0) {
       for (let i = 0; i < sheetRows.length; i++) {
         const targetRow = rowIndices[i] || 5;
-        const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${formSheet}!B${targetRow}:M${targetRow}?valueInputOption=USER_ENTERED`;
+        const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${formSheet}!A${targetRow}:M${targetRow}?valueInputOption=USER_ENTERED`;
         await fetch(updateUrl, {
           method: 'PUT',
           headers: {
@@ -962,9 +1021,10 @@ export async function submitRegistrationData(
         });
       }
     } else {
-      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${formSheet}!B5:M:append?valueInputOption=USER_ENTERED`;
-      await fetch(appendUrl, {
-        method: 'POST',
+      const targetEndRow = targetStartRow + sheetRows.length - 1;
+      const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${formSheet}!A${targetStartRow}:M${targetEndRow}?valueInputOption=USER_ENTERED`;
+      await fetch(updateUrl, {
+        method: 'PUT',
         headers: {
           Authorization: `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
@@ -982,25 +1042,14 @@ export async function submitRegistrationData(
 }
 
 /**
- * Intelligent Attendee Row Parser based on Register-1 gold standard:
- * Col 1: Code (e.g. 9579)
- * Col 2: Sex ('Mr.', 'Ms.', 'Mrs.')
- * Col 3: First Name ('Promrin')
- * Col 4: Last Name ('Srisang')
- * Col 5: Dept ('ENG / PTE')
- * Col 6: Position ('Chief Technician')
- * Col 7: Expectation ('23456')
- * Col 8: Apply ('s')
- * Col 9: Remark ('s')
- * Col 10: Submitter Name ('rediotyrt')
- * Col 11: Submitter Dept ('zer5u')
- * Col 12: Submitter Phone ('aeutdoup')
- *
- * Automatically detects shifted sheets (like Register-3 with duplicate Sex/Title columns)
- * and skips headers & descriptive banner rows.
+ * Intelligent Attendee Row Parser:
+ * Strictly parses real attendees starting from row 5 in Google Sheets.
+ * Skips table headers, course name rows, dates, and non-attendee banners.
  */
 export function parseAttendeeFromCells(c: any[], rowIndex: number): AttendeeRow | null {
   if (!c || c.length === 0) return null;
+  // STRICT: Real attendees only exist from row 5 onwards!
+  if (rowIndex < 5) return null;
 
   const rawVals = c.map((cell) => {
     if (cell === null || cell === undefined) return '';
@@ -1010,33 +1059,40 @@ export function parseAttendeeFromCells(c: any[], rowIndex: number): AttendeeRow 
     return String(cell).trim();
   });
 
-  // 1. Skip table headers and descriptive banner rows
+  // 1. Skip completely empty rows
+  if (rawVals.every((v) => !v)) return null;
+
+  // 2. Skip table headers and descriptive banner rows (case-insensitive substring match)
   const isHeader = rawVals.some((val) =>
-    /^(Training Registration|Course Name|Training Date|Title \/ Sex|First Name|Last-name|Dept\. \/ In-charge|Position|Expectation for Training)$/i.test(
+    /(Course Name|Training Registration|Training Date|Microsoft Teams|Via :|Trainer :|Title \/ Sex|First Name|Last-name|Dept\. \/ In-charge|Position|Expectation for Training|Apply for work|Remark|ผู้ประสานงาน|No\.|Code|Sex)/i.test(
       val
     )
   );
   if (isHeader) return null;
 
-  // 2. Code is in col 1 or col 0
-  const codeCandidate = rawVals[1] || rawVals[0] || '';
-  if (!codeCandidate || /^(code|no\.|#|รหัส|คำนำหน้า|ลำดับ)$/i.test(codeCandidate)) {
-    return null;
-  }
-  if (/^(code|no\.|รหัส|ลำดับ)$/i.test(rawVals[1]) || /^(sex|เพศ|คำนำหน้า)$/i.test(rawVals[2])) {
+  // 3. Code candidate in col 1 or col 0. Must not be a keyword, title, or label
+  const codeCandidate = (rawVals[1] || rawVals[0] || '').trim();
+  if (
+    !codeCandidate ||
+    codeCandidate.includes(':') ||
+    /(course|training|date|code|no\.|#|รหัส|คำนำหน้า|ลำดับ|survey|microsoft|teams|svi)/i.test(codeCandidate)
+  ) {
     return null;
   }
 
-  // 3. Detect column shift (as seen in Register-3 where Col 2 & 3 both have Sex/Title, shifting First Name to Col 4)
   const sexRegex = /^(mr\.|ms\.|mrs\.|นาย|นาง|นางสาว|miss|master)$/i;
-  const isCol3Sex = sexRegex.test(rawVals[3]);
 
+  // 4. Detect column shift (as seen in Register-3 where Col 2 & 3 both have Sex/Title, shifting First Name to Col 4)
+  const isCol3Sex = sexRegex.test(rawVals[3]);
   if (isCol3Sex && rawVals[4] && !sexRegex.test(rawVals[4])) {
+    const fname = rawVals[4].trim();
+    if (!fname || fname.includes(':') || /(course|training|name|date|survey|microsoft)/i.test(fname)) return null;
+
     const hasRemarkCol = rawVals.length > 13 && rawVals[13];
     return {
-      code: rawVals[1],
+      code: codeCandidate,
       sex: (rawVals[3] || rawVals[2] || 'Mr.') as 'Mr.' | 'Ms.' | 'Mrs.',
-      fname: rawVals[4],
+      fname,
       lname: rawVals[5] || '',
       dept: rawVals[6] || '',
       pos: rawVals[7] || '',
@@ -1052,15 +1108,16 @@ export function parseAttendeeFromCells(c: any[], rowIndex: number): AttendeeRow 
 
   // Standard Register-1 layout:
   // Col 1: Code | Col 2: Sex | Col 3: First Name | Col 4: Last Name | Col 5: Dept | Col 6: Position
-  // Col 7: Expectation | Col 8: Application | Col 9: Remark | Col 10: Submitter Name | Col 11: Submitter Dept | Col 12: Submitter Phone
-  const fname = rawVals[3] || '';
-  if (!fname && !rawVals[4]) return null;
+  const fname = (rawVals[3] || '').trim();
+  const lname = (rawVals[4] || '').trim();
+  if (!fname && !lname) return null;
+  if (fname.includes(':') || /(course|training|survey|registration|date|teams)/i.test(fname)) return null;
 
   return {
-    code: rawVals[1] || rawVals[0],
-    sex: (rawVals[2] as 'Mr.' | 'Ms.' | 'Mrs.') || 'Mr.',
-    fname: rawVals[3] || '',
-    lname: rawVals[4] || '',
+    code: codeCandidate,
+    sex: (sexRegex.test(rawVals[2]) ? rawVals[2] : 'Mr.') as 'Mr.' | 'Ms.' | 'Mrs.',
+    fname,
+    lname,
     dept: rawVals[5] || '',
     pos: rawVals[6] || '',
     exp: rawVals[7] || '',
@@ -1078,10 +1135,10 @@ export async function getRegistrationAttendees(
   sheetName: string,
   accessToken?: string | null
 ): Promise<{ attendees: AttendeeRow[]; error?: string }> {
-  // If accessToken is available, try Sheets API v4 first
+  // If accessToken is available, try Sheets API v4 first starting strictly at Row 5
   if (accessToken) {
     try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100`;
+      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M500`;
       const res = await fetch(url, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
@@ -1098,22 +1155,21 @@ export async function getRegistrationAttendees(
           }
         }
 
-        if (attendees.length > 0) {
-          saveLocalAttendees(sheetName, attendees);
-          return { attendees };
-        }
+        saveLocalAttendees(sheetName, attendees);
+        return { attendees };
       }
     } catch (err: unknown) {
       console.warn('Sheets API v4 error for attendees, falling back to public GViz:', err);
     }
   }
 
-  // Public Google Sheets GViz fetch so all users see real-time attendees from the same sheet
+  // Public Google Sheets GViz fetch with range A5:M500 so all users see real-time attendees starting strictly at Row 5
   try {
-    const gvizData = await fetchSheetGvizData(sheetName);
-    if (gvizData?.table?.rows) {
+    const gvizData = await fetchSheetGvizData(sheetName, 'A5:M500');
+    if (gvizData?.table) {
+      const gvizRows = gvizData.table.rows || [];
       const attendees: AttendeeRow[] = [];
-      gvizData.table.rows.forEach((r: any, i: number) => {
+      gvizRows.forEach((r: any, i: number) => {
         const c = r.c || [];
         const parsed = parseAttendeeFromCells(c, 5 + i);
         if (parsed) {
@@ -1121,10 +1177,9 @@ export async function getRegistrationAttendees(
         }
       });
 
-      if (attendees.length > 0) {
-        saveLocalAttendees(sheetName, attendees);
-        return { attendees };
-      }
+      // Save real fetched attendees (even if empty, which is accurate when no one has registered)
+      saveLocalAttendees(sheetName, attendees);
+      return { attendees };
     }
   } catch (err: unknown) {
     console.warn('Public GViz fetch error for attendees:', err);
@@ -1135,7 +1190,7 @@ export async function getRegistrationAttendees(
     const sheetDoc = await getDoc(doc(db, 'form_attendees', sheetName));
     if (sheetDoc.exists()) {
       const data = sheetDoc.data();
-      if (Array.isArray(data?.attendees) && data.attendees.length > 0) {
+      if (Array.isArray(data?.attendees)) {
         saveLocalAttendees(sheetName, data.attendees);
         return { attendees: data.attendees };
       }
@@ -1162,7 +1217,8 @@ export async function clearRegistrationSheet(
   });
   saveLocalEvents(localEvents);
 
-  sendToSheetsWebApp('clear_sheet', { formSheet: sheetName });
+  // Send to Web App endpoint (zero-login for all)
+  const webAppRes = await sendToSheetsWebApp('clear_sheet', { formSheet: sheetName });
 
   // Clear in Firestore
   try {
@@ -1172,11 +1228,14 @@ export async function clearRegistrationSheet(
   }
 
   if (!accessToken) {
+    if (!webAppRes.success) {
+      addPendingSyncItem({ type: 'clear_sheet' as any, payload: { formSheet: sheetName } });
+    }
     return { success: true };
   }
 
   try {
-    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!B5:M100:clear`;
+    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100:clear`;
     await fetch(clearUrl, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -1224,8 +1283,8 @@ export async function deleteRegistrationAttendees(
 
   saveLocalAttendees(sheetName, updatedRemaining);
 
-  // Send webhook sync to Apps Script
-  sendToSheetsWebApp('delete_attendees', {
+  // Send webhook sync to Apps Script (zero-login for all)
+  const webAppRes = await sendToSheetsWebApp('delete_attendees', {
     formSheet: sheetName,
     deleted: attendeesToDelete,
     remaining: updatedRemaining,
@@ -1246,17 +1305,90 @@ export async function deleteRegistrationAttendees(
     console.warn('Firestore delete attendees update warning:', err);
   }
 
-  // Sync to Google Sheets if OAuth token available
+  // If no accessToken, queue pending delete so it syncs when Admin connects
+  if (!accessToken) {
+    if (!webAppRes.success) {
+      addPendingSyncItem({
+        type: 'delete_attendees' as any,
+        payload: { formSheet: sheetName, attendeesToDelete },
+      });
+    }
+    return { success: true, remainingCount: updatedRemaining.length };
+  }
+
+  // Direct sync to Google Sheets via OAuth token
+  try {
+    // 1. Clear old data range A5:M100
+    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100:clear`;
+    await fetch(clearUrl, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    // 2. Rewrite remaining attendees from Row 5 (Column A to M)
+    if (updatedRemaining.length > 0) {
+      const sheetRows = updatedRemaining.map((d, idx) => [
+        String(idx + 1), // Col A: No.
+        d.code || '',    // Col B: Code
+        d.sex || 'Mr.',  // Col C: Sex
+        d.fname || '',   // Col D: Name
+        d.lname || '',   // Col E: Last Name
+        d.dept || '',    // Col F: Dept
+        d.pos || '',     // Col G: Position
+        d.exp || '',     // Col H: Expectation
+        d.app || '',     // Col I: Apply
+        d.rem || '',     // Col J: Remark
+        d.submitterName || '',
+        d.submitterDept || '',
+        d.submitterPhone || '',
+      ]);
+
+      const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M${
+        4 + sheetRows.length
+      }?valueInputOption=USER_ENTERED`;
+      await fetch(writeUrl, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ values: sheetRows }),
+      });
+    }
+  } catch (err) {
+    console.error('Google Sheets delete API sync error:', err);
+    return { success: true, remainingCount: updatedRemaining.length, error: (err as Error).message };
+  }
+
+  return { success: true, remainingCount: updatedRemaining.length };
+}
+
+// 6c. Force Push Entire Current Attendee List to Google Sheets
+export async function forcePushSheetToGoogleSheets(
+  sheetName: string,
+  accessToken?: string | null
+): Promise<{ success: boolean; count: number; error?: string }> {
+  const current = getLocalAttendees(sheetName);
+
+  // 1. Send via Google Apps Script Webhook
+  const webAppRes = await sendToSheetsWebApp('delete_attendees', {
+    formSheet: sheetName,
+    deleted: [],
+    remaining: current,
+  });
+
+  // 2. If OAuth accessToken available, also write via Google Sheets API v4
   if (accessToken) {
     try {
-      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!B5:M100:clear`;
+      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100:clear`;
       await fetch(clearUrl, {
         method: 'POST',
         headers: { Authorization: `Bearer ${accessToken}` },
       });
 
-      if (updatedRemaining.length > 0) {
-        const sheetRows = updatedRemaining.map((d) => [
+      if (current.length > 0) {
+        const sheetRows = current.map((d, idx) => [
+          String(idx + 1),
           d.code || '',
           d.sex || 'Mr.',
           d.fname || '',
@@ -1271,7 +1403,7 @@ export async function deleteRegistrationAttendees(
           d.submitterPhone || '',
         ]);
 
-        const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!B5:M${
+        const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M${
           4 + sheetRows.length
         }?valueInputOption=USER_ENTERED`;
         await fetch(writeUrl, {
@@ -1283,13 +1415,16 @@ export async function deleteRegistrationAttendees(
           body: JSON.stringify({ values: sheetRows }),
         });
       }
-    } catch (err) {
-      console.error('Google Sheets delete API sync error:', err);
-      return { success: true, remainingCount: updatedRemaining.length, error: (err as Error).message };
+    } catch (e: unknown) {
+      console.warn('OAuth Sheets API push error:', e);
     }
   }
 
-  return { success: true, remainingCount: updatedRemaining.length };
+  return {
+    success: webAppRes.success || Boolean(accessToken),
+    count: current.length,
+    error: webAppRes.error,
+  };
 }
 
 // 7. Auto-Flush Pending Sync Queue
@@ -1312,6 +1447,12 @@ export async function flushPendingSyncQueue(
         count++;
       } else if (item.type === 'delete_event') {
         await deleteEventFromSheet(item.payload.eventId, accessToken);
+        count++;
+      } else if (item.type === ('clear_sheet' as any)) {
+        await clearRegistrationSheet(item.payload.formSheet, accessToken);
+        count++;
+      } else if (item.type === ('delete_attendees' as any)) {
+        await deleteRegistrationAttendees(item.payload.formSheet, item.payload.attendeesToDelete, accessToken);
         count++;
       }
     } catch (e) {
