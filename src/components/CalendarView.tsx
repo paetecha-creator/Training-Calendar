@@ -150,13 +150,15 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
         ))}
       </div>
 
-      {/* Calendar Matrix Grid: Expands rows vertically when multiple courses occur on the same day */}
-      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 md:gap-2 flex-1 min-h-0 overflow-y-auto p-1 auto-rows-fr">
+      {/* Calendar Matrix Grid: Expands rows dynamically when multiple courses occur on the same day */}
+      <div className="grid grid-cols-7 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto p-1.5 auto-rows-auto">
         {calendarDays.map((day) => {
           // Find events on this date
           const dayEvents = filteredEvents.filter((ev) => {
             return day.dateStr >= ev.start && day.dateStr <= ev.end;
           });
+
+          const hasMultipleCourses = dayEvents.filter(e => !e.isHoliday).length > 1;
 
           return (
             <div
@@ -166,33 +168,46 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   onAddEventOnDate(day.dateStr);
                 }
               }}
-              className={`min-h-[85px] sm:min-h-[110px] md:min-h-[125px] h-full rounded-xl p-1 sm:p-1.5 md:p-2 flex flex-col justify-start transition-all group select-none shadow-[2px_2px_6px_rgba(0,0,0,0.07),-2px_-2px_6px_rgba(255,255,255,0.95)] ${
+              className={`min-h-[120px] sm:min-h-[140px] md:min-h-[155px] rounded-xl p-1.5 sm:p-2 flex flex-col justify-start relative overflow-hidden transition-all group select-none shadow-[2px_2px_6px_rgba(0,0,0,0.07),-2px_-2px_6px_rgba(255,255,255,0.95)] ${
                 day.isToday
                   ? 'bg-gradient-to-b from-[#f8fafc] to-[#eef2f6] border-2 border-[#1e3a8a] ring-2 ring-[#1e3a8a]/20 shadow-[3px_3px_8px_rgba(30,58,138,0.18),-2px_-2px_6px_rgba(255,255,255,1)]'
+                  : hasMultipleCourses
+                  ? 'neu-card-sm border-2 border-indigo-200/90 bg-gradient-to-b from-white to-indigo-50/20 shadow-[3px_3px_8px_rgba(0,0,0,0.08),-2px_-2px_6px_rgba(255,255,255,1)]'
                   : day.isCurrentMonth
                   ? 'neu-card-sm border border-slate-200/70 hover:shadow-[3px_3px_8px_rgba(0,0,0,0.1),-3px_-3px_8px_rgba(255,255,255,1)]'
                   : 'neu-inset-sm opacity-45'
               } ${isAdmin ? 'cursor-pointer hover:border-[#1e3a8a]/60' : ''}`}
             >
-              {/* Day Number Header */}
-              <div className="flex items-center justify-between mb-1.5 shrink-0">
-                <span
-                  className={`text-[10px] sm:text-[11px] md:text-xs font-bold flex items-center justify-center w-5 h-5 sm:w-5.5 sm:h-5.5 md:w-6 md:h-6 rounded-lg transition-all ${
-                    day.isToday
-                      ? 'bg-gradient-to-r from-[#1e3a8a] to-[#172554] text-white font-extrabold shadow-sm'
-                      : day.isSunday
-                      ? 'text-rose-600 font-bold bg-rose-50/80 border border-rose-200 shadow-2xs'
-                      : day.isCurrentMonth
-                      ? 'text-slate-800 font-bold bg-slate-50 border border-slate-200 shadow-2xs'
-                      : 'text-slate-400 font-medium'
-                  }`}
-                >
-                  {day.dayNumber}
-                </span>
+              {/* Day Number Header: Always prominent, crisp, and clearly separated from event chips */}
+              <div className="flex items-center justify-between w-full pb-1 mb-1.5 border-b border-slate-200/60 shrink-0">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`text-xs md:text-sm font-black flex items-center justify-center w-6 h-6 md:w-7 md:h-7 rounded-lg transition-all shadow-xs shrink-0 ${
+                      day.isToday
+                        ? 'bg-gradient-to-r from-[#1e3a8a] to-[#172554] text-white font-black ring-2 ring-[#1e3a8a]/30 shadow-sm'
+                        : day.isSunday
+                        ? 'text-rose-600 font-extrabold bg-rose-50 border border-rose-200'
+                        : day.isCurrentMonth
+                        ? 'text-slate-900 font-black bg-slate-100 border border-slate-300'
+                        : 'text-slate-400 font-bold opacity-50'
+                    }`}
+                  >
+                    {day.dayNumber}
+                  </span>
+
+                  {hasMultipleCourses && (
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[9px] md:text-[10px] font-black bg-[#1e3a8a] text-white shadow-2xs whitespace-nowrap"
+                      title={`มี ${dayEvents.length} หลักสูตรในวันนี้`}
+                    >
+                      {dayEvents.length} คอร์ส
+                    </span>
+                  )}
+                </div>
 
                 {isAdmin && (
                   <span
-                    className="opacity-0 group-hover:opacity-100 text-[9px] text-[#1e3a8a] bg-blue-50 border border-blue-200 px-1 py-0.5 rounded font-bold transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 text-[9px] text-[#1e3a8a] bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-bold transition-opacity cursor-pointer shrink-0"
                     title="เพิ่มหลักสูตรในวันนี้"
                   >
                     + เพิ่ม
@@ -237,12 +252,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                             title="เปิดรับลงทะเบียน"
                           />
                         )}
-                        <span className="flex-1 tracking-tight leading-snug line-clamp-2 md:line-clamp-none break-words">
+                        <span className="flex-1 tracking-tight leading-snug break-words">
                           {ev.title}
                         </span>
                       </div>
                       {ev.startTime && (
-                        <div className="text-[8px] sm:text-[9px] opacity-80 flex items-center gap-1 mt-1 font-medium">
+                        <div className="text-[8px] sm:text-[9px] opacity-85 flex items-center gap-1 mt-1 font-medium">
                           <Clock className="w-2.5 h-2.5 inline shrink-0" />
                           <span>{ev.startTime}</span>
                         </div>

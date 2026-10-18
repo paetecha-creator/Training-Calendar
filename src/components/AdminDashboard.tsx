@@ -167,26 +167,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleFlushPending = async () => {
-    if (!accessToken) {
-      if (onGoogleSignIn) {
-        await onGoogleSignIn();
-      } else {
-        alert('กรุณาเชื่อมต่อบัญชี Google ก่อนเพื่อส่งข้อมูลลงชีต');
-      }
-      return;
-    }
     setIsFlushing(true);
     try {
       const res = await flushPendingSyncQueue(accessToken);
       setPendingCount(getPendingSyncQueue().length);
       setStatusMessage({
-        text: `ซิงค์ข้อมูลค้างส่งลง Google Sheets สำเร็จแล้ว ${res.flushedCount} รายการ`,
+        text: `ซิงค์ข้อมูลค้างส่งสำเร็จเรียบร้อย (${res.flushedCount} รายการ)`,
         type: 'success',
       });
-      await loadSheetData(selectedSheet);
-    } catch (err) {
-      console.error(err);
-      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการซิงค์คิวค้างส่ง', type: 'error' });
+    } catch (e) {
+      console.error(e);
+      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการซิงค์ข้อมูล', type: 'error' });
     } finally {
       setIsFlushing(false);
     }
@@ -257,17 +248,11 @@ function doPost(e) {
         </div>
 
         <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          {/* Quick Google Sign In to authorize Sheets API writing */}
-          {!accessToken && onGoogleSignIn && (
-            <button
-              onClick={onGoogleSignIn}
-              title="เชื่อมต่อบัญชี Google เพื่อเปิดการเขียนลง Sheets อัตโนมัติ"
-              className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:from-[#172554] hover:to-[#0f172a] rounded-lg shadow-xs cursor-pointer transition-all"
-            >
-              <KeyRound className="w-3 h-3 text-white" />
-              <span>เชื่อมต่อ Google Account</span>
-            </button>
-          )}
+          {/* Real-time Automated Background Sync Status */}
+          <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200/80 rounded-lg shadow-2xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>ซิงค์ข้อมูลอัตโนมัติตลอดเวลา</span>
+          </div>
 
           {pendingCount > 0 && (
             <button
@@ -344,7 +329,7 @@ function doPost(e) {
             </button>
           </div>
           <p className="text-[11px] text-slate-600">
-            * หากระบุ Web App URL ผู้ใช้ทั่วไปที่ลงทะเบียนและแอดมินที่เพิ่มหลักสูตรจะส่งข้อมูลอัปเดตลง Google Sheets ได้ทันทีโดยไม่ต้องล็อกอิน หรือสามารถกดปุ่ม "เชื่อมต่อ Google Account" ด้านบนเพื่อเขียนลงชีตผ่าน Google Sheets API v4 ได้โดยตรง
+            * ระบบทำงานแบบ Real-time Auto-Sync ตลอดเวลา ข้อมูลหลักสูตรและการลงทะเบียนจะส่งและซิงค์ข้อมูลอัตโนมัติทันที ผู้ใช้งานเว็บทั่วไปและแอดมินไม่ต้องกดล็อกอิน Google หรือดำเนินการใดๆ เพิ่มเติม
           </p>
         </div>
       )}
@@ -467,7 +452,7 @@ function doPost(e) {
 
       {/* 4. Large Attendees Table */}
       <div className="flex-1 min-h-0 overflow-auto border border-slate-200/80 rounded-xl bg-white shadow-2xs">
-        <table className="w-full text-left text-xs min-w-[1100px]">
+        <table className="w-full text-left text-xs min-w-[1180px]">
           <thead className="sticky top-0 z-10 text-[11px] font-bold text-slate-700 uppercase bg-slate-50 border-b border-slate-200">
             <tr>
               <th className="py-2.5 px-3 text-center w-12">#</th>
@@ -479,13 +464,14 @@ function doPost(e) {
               <th className="py-2.5 px-3 w-32">ตำแหน่ง</th>
               <th className="py-2.5 px-3">ความคาดหวัง (Expectation)</th>
               <th className="py-2.5 px-3">การปรับใช้ (Application)</th>
-              <th className="py-2.5 px-3 w-36">ผู้ประสานงาน (Submitter)</th>
+              <th className="py-2.5 px-3 w-28">หมายเหตุ (Remark)</th>
+              <th className="py-2.5 px-3 w-44">ผู้ประสานงาน (Submitter)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filteredAttendees.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-16 text-slate-400">
+                <td colSpan={11} className="text-center py-16 text-slate-400">
                   <Users className="w-10 h-10 mx-auto mb-2 opacity-30 text-[#1e3a8a]" />
                   <p className="font-semibold text-xs text-slate-600">ยังไม่มีข้อมูลผู้ลงทะเบียนในฟอร์มชีตนี้</p>
                 </td>
@@ -504,11 +490,14 @@ function doPost(e) {
                     </span>
                   </td>
                   <td className="py-2 px-3 text-slate-600">{a.pos}</td>
-                  <td className="py-2 px-3 text-slate-600 max-w-[200px] truncate" title={a.exp}>
+                  <td className="py-2 px-3 text-slate-600 max-w-[180px] truncate" title={a.exp}>
                     {a.exp}
                   </td>
-                  <td className="py-2 px-3 text-slate-600 max-w-[200px] truncate" title={a.app}>
+                  <td className="py-2 px-3 text-slate-600 max-w-[180px] truncate" title={a.app}>
                     {a.app}
+                  </td>
+                  <td className="py-2 px-3 text-slate-500 max-w-[120px] truncate" title={a.rem}>
+                    {a.rem || '-'}
                   </td>
                   <td className="py-2 px-3 text-slate-600 text-[11px]">
                     <div className="font-semibold text-slate-900">{a.submitterName || '-'}</div>

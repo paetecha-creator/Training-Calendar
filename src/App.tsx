@@ -7,7 +7,8 @@ import {
   submitRegistrationData,
   flushPendingSyncQueue,
 } from './services/sheetsService';
-import { initAuth, googleSignIn, logoutGoogle } from './services/firebase';
+import { initAuth, googleSignIn, logoutGoogle, db } from './services/firebase';
+import { onSnapshot, collection } from 'firebase/firestore';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { CalendarView } from './components/CalendarView';
@@ -91,7 +92,7 @@ export default function App() {
     [accessToken]
   );
 
-  // Continuous sync: Fetch on mount, poll every 25 seconds, and sync on window focus
+  // Continuous sync: Fetch on mount, poll every 25 seconds, sync on window focus, and real-time Firestore listener
   useEffect(() => {
     loadEvents(accessToken);
 
@@ -103,6 +104,15 @@ export default function App() {
       loadEvents(accessToken);
     };
     window.addEventListener('focus', handleFocus);
+
+    let unsubscribeFirestore = () => {};
+    try {
+      unsubscribeFirestore = onSnapshot(collection(db, 'events'), () => {
+        loadEvents(accessToken);
+      });
+    } catch (e) {
+      console.warn('Firestore snapshot error:', e);
+    }
 
     const unsubscribe = initAuth(
       async (authUser, token) => {
@@ -128,6 +138,7 @@ export default function App() {
       clearInterval(intervalId);
       window.removeEventListener('focus', handleFocus);
       unsubscribe();
+      unsubscribeFirestore();
     };
   }, [loadEvents, accessToken]);
 

@@ -454,9 +454,22 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             <div id="receipt-print-card" className="w-full rounded-2xl p-5 md:p-6 text-left text-xs space-y-4 bg-white border border-slate-200 shadow-xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 gap-2 border-b border-slate-100">
                 <div>
-                  <TohokuLogo size="sm" />
-                  <div className="text-[11px] text-slate-500 font-medium mt-1">
-                    Corporate Training & Development Center
+                  <div className="flex items-center gap-2.5">
+                    <svg className="w-8 h-8 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="50" cy="50" r="44" stroke="#DC2626" strokeWidth="5.5" fill="none" />
+                      <line x1="6" y1="50" x2="94" y2="50" stroke="#DC2626" strokeWidth="4.5" />
+                      <ellipse cx="50" cy="50" rx="43" ry="24" stroke="#DC2626" strokeWidth="4.5" fill="none" />
+                      <line x1="16" y1="28" x2="84" y2="28" stroke="#DC2626" strokeWidth="4" />
+                      <line x1="16" y1="72" x2="84" y2="72" stroke="#DC2626" strokeWidth="4" />
+                      <ellipse cx="50" cy="50" rx="24" ry="44" stroke="#DC2626" strokeWidth="4.5" fill="none" />
+                      <line x1="50" y1="6" x2="50" y2="94" stroke="#DC2626" strokeWidth="4.5" />
+                    </svg>
+                    <span className="font-black text-lg text-[#02478b] tracking-wider">
+                      TOHOKU SOLUTIONS
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-semibold mt-1 ml-10.5">
+                    Corporate Training & Development Center | TSTraining Center
                   </div>
                 </div>
                 <div className="text-left sm:text-right">

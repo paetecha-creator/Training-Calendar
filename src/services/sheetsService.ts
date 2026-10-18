@@ -1,4 +1,6 @@
 import { TrainingEvent, AttendeeRow, RegistrationPayload, TrainingCategory } from '../types';
+import { doc, getDoc, setDoc, deleteDoc, getDocs, collection } from 'firebase/firestore';
+import { db } from './firebase';
 
 export const SPREADSHEET_ID = '1gqp55Bp-HyDihtbHQGpyeVglHAXCQwXTxnefK8xVozs';
 export const MASTER_SHEET = 'Master';
@@ -636,7 +638,28 @@ export async function getEventsFromSheet(accessToken?: string | null): Promise<{
     }));
   }
 
-  // D. Fallback to local cache only if Google Sheets was completely unreachable
+  // D. Merge real-time events from Firestore cloud database
+  try {
+    const snap = await getDocs(collection(db, 'events'));
+    if (!snap.empty) {
+      snap.forEach((d) => {
+        const evData = d.data() as TrainingEvent;
+        if (evData && evData.id && evData.title) {
+          const existingIdx = masterEvents.findIndex((e) => e.id === evData.id);
+          if (existingIdx !== -1) {
+            masterEvents[existingIdx] = evData;
+          } else {
+            masterEvents.push(evData);
+          }
+        }
+      });
+      source = 'google-sheets';
+    }
+  } catch (err) {
+    console.warn('Firestore events load warning:', err);
+  }
+
+  // Fallback to local cache only if Google Sheets & Firestore were completely unreachable
   if (masterEvents.length === 0) {
     masterEvents = getLocalEvents().filter((e) => e.isEvent);
     source = 'local-cache';
@@ -701,8 +724,16 @@ export async function saveEventToSheet(
   }
   saveLocalEvents(localEvents);
 
-  // 1. Try sending to Google Apps Script Web App if configured (zero-login public sync)
+  // 1. Send to Google Apps Script Web App if configured (zero-login public sync)
   sendToSheetsWebApp('save_event', { event: newEvent });
+
+  // 2. Real-time persistent cloud sync via Firestore (Zero-login for all users!)
+  try {
+    const eventRef = doc(db, 'events', newEvent.id);
+    await setDoc(eventRef, newEvent, { merge: true });
+  } catch (err) {
+    console.warn('Firestore event write error:', err);
+  }
 
   if (!accessToken) {
     // Queue pending change so it automatically pushes to Google Sheets when Admin connects
@@ -786,6 +817,14 @@ export async function deleteEventFromSheet(
 
   // Send to Google Apps Script Web App if configured
   sendToSheetsWebApp('delete_event', { eventId });
+
+  // Persistent cloud sync via Firestore (Zero-login for all users!)
+  try {
+    const eventRef = doc(db, 'events', eventId);
+    await deleteDoc(eventRef);
+  } catch (err) {
+    console.warn('Firestore event delete error:', err);
+  }
 
   if (!accessToken) {
     addPendingSyncItem({ type: 'delete_event', payload: { eventId } });
@@ -877,6 +916,15 @@ export async function submitRegistrationData(
     rowIndices,
   });
 
+  // Real-time persistent cloud sync via Firestore (Zero-login for all users!)
+  try {
+    const sheetAttendeesRef = doc(db, 'form_attendees', formSheet);
+    const updatedAttendees = getLocalAttendees(formSheet);
+    await setDoc(sheetAttendeesRef, { attendees: updatedAttendees, updatedAt: new Date().toISOString() }, { merge: true });
+  } catch (err) {
+    console.warn('Firestore registration write error:', err);
+  }
+
   if (!accessToken) {
     // Queue pending change so it automatically pushes to Google Sheets when Admin connects
     addPendingSyncItem({ type: 'registration', payload });
@@ -962,7 +1010,7 @@ export function parseAttendeeFromCells(c: any[], rowIndex: number): AttendeeRow 
     return String(cell).trim();
   });
 
-  // 1. Skip table headers and descriptive rows
+  // 1. Skip table headers and descriptive banner rows
   const isHeader = rawVals.some((val) =>
     /^(Training Registration|Course Name|Training Date|Title \/ Sex|First Name|Last-name|Dept\. \/ In-charge|Position|Expectation for Training)$/i.test(
       val
@@ -972,35 +1020,39 @@ export function parseAttendeeFromCells(c: any[], rowIndex: number): AttendeeRow 
 
   // 2. Code is in col 1 or col 0
   const codeCandidate = rawVals[1] || rawVals[0] || '';
-  if (!codeCandidate || /^(code|no\.|#|รหัส|คำนำหน้า)$/i.test(codeCandidate)) {
+  if (!codeCandidate || /^(code|no\.|#|รหัส|คำนำหน้า|ลำดับ)$/i.test(codeCandidate)) {
+    return null;
+  }
+  if (/^(code|no\.|รหัส|ลำดับ)$/i.test(rawVals[1]) || /^(sex|เพศ|คำนำหน้า)$/i.test(rawVals[2])) {
     return null;
   }
 
-  // 3. Detect column shift:
-  // In Register-3: Col 2='Mr.', Col 3='Mr.', Col 4='First Name', Col 5='Last Name', etc.
+  // 3. Detect column shift (as seen in Register-3 where Col 2 & 3 both have Sex/Title, shifting First Name to Col 4)
   const sexRegex = /^(mr\.|ms\.|mrs\.|นาย|นาง|นางสาว|miss|master)$/i;
   const isCol3Sex = sexRegex.test(rawVals[3]);
 
   if (isCol3Sex && rawVals[4] && !sexRegex.test(rawVals[4])) {
-    // Shifted layout (as in Register-3)
+    const hasRemarkCol = rawVals.length > 13 && rawVals[13];
     return {
       code: rawVals[1],
-      sex: (rawVals[2] || rawVals[3] || 'Mr.') as 'Mr.' | 'Ms.' | 'Mrs.',
+      sex: (rawVals[3] || rawVals[2] || 'Mr.') as 'Mr.' | 'Ms.' | 'Mrs.',
       fname: rawVals[4],
       lname: rawVals[5] || '',
       dept: rawVals[6] || '',
       pos: rawVals[7] || '',
       exp: rawVals[8] || '',
       app: rawVals[9] || '',
-      rem: rawVals[10] && rawVals.length > 13 ? rawVals[10] : '',
-      submitterName: rawVals[10] || '',
-      submitterDept: rawVals[11] || '',
-      submitterPhone: rawVals[12] || '',
+      rem: hasRemarkCol ? rawVals[10] : '',
+      submitterName: hasRemarkCol ? rawVals[11] : rawVals[10] || '',
+      submitterDept: hasRemarkCol ? rawVals[12] : rawVals[11] || '',
+      submitterPhone: hasRemarkCol ? rawVals[13] : rawVals[12] || '',
       rowIndex,
     };
   }
 
-  // Standard Register-1 layout
+  // Standard Register-1 layout:
+  // Col 1: Code | Col 2: Sex | Col 3: First Name | Col 4: Last Name | Col 5: Dept | Col 6: Position
+  // Col 7: Expectation | Col 8: Application | Col 9: Remark | Col 10: Submitter Name | Col 11: Submitter Dept | Col 12: Submitter Phone
   const fname = rawVals[3] || '';
   if (!fname && !rawVals[4]) return null;
 
@@ -1078,6 +1130,20 @@ export async function getRegistrationAttendees(
     console.warn('Public GViz fetch error for attendees:', err);
   }
 
+  // Check Firestore for real-time registered attendees
+  try {
+    const sheetDoc = await getDoc(doc(db, 'form_attendees', sheetName));
+    if (sheetDoc.exists()) {
+      const data = sheetDoc.data();
+      if (Array.isArray(data?.attendees) && data.attendees.length > 0) {
+        saveLocalAttendees(sheetName, data.attendees);
+        return { attendees: data.attendees };
+      }
+    }
+  } catch (err) {
+    console.warn('Firestore form_attendees fetch warning:', err);
+  }
+
   return { attendees: getLocalAttendees(sheetName) };
 }
 
@@ -1098,6 +1164,13 @@ export async function clearRegistrationSheet(
 
   sendToSheetsWebApp('clear_sheet', { formSheet: sheetName });
 
+  // Clear in Firestore
+  try {
+    await setDoc(doc(db, 'form_attendees', sheetName), { attendees: [], clearedAt: new Date().toISOString() });
+  } catch (err) {
+    console.warn('Firestore clear error:', err);
+  }
+
   if (!accessToken) {
     return { success: true };
   }
@@ -1116,9 +1189,9 @@ export async function clearRegistrationSheet(
   }
 }
 
-// 7. Auto-Flush Pending Sync Queue when Admin is authenticated
+// 7. Auto-Flush Pending Sync Queue
 export async function flushPendingSyncQueue(
-  accessToken: string
+  accessToken?: string | null
 ): Promise<{ flushedCount: number }> {
   const queue = getPendingSyncQueue();
   if (queue.length === 0) return { flushedCount: 0 };

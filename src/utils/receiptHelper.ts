@@ -81,19 +81,25 @@ export async function downloadRegistrationReceiptPdf(
 
     pdfContainer.innerHTML = `
       <div style="width: 100%; box-sizing: border-box; background: #ffffff;">
-        {/* Header Bar */}
+        <!-- Header Bar -->
         <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #1e3a8a; padding-bottom: 14px; margin-bottom: 16px;">
           <div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <div style="width: 26px; height: 26px; border-radius: 6px; background: linear-gradient(135deg, #1e3a8a, #172554); display: flex; align-items: center; justify-content: center; color: #ffffff; font-weight: 900; font-size: 14px;">
-                T
-              </div>
-              <div style="font-size: 20px; font-weight: 900; color: #1e3a8a; letter-spacing: 0.5px; line-height: 1.2;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink: 0;">
+                <circle cx="50" cy="50" r="44" stroke="#DC2626" stroke-width="5.5" fill="none" />
+                <line x1="6" y1="50" x2="94" y2="50" stroke="#DC2626" stroke-width="4.5" />
+                <ellipse cx="50" cy="50" rx="43" ry="24" stroke="#DC2626" stroke-width="4.5" fill="none" />
+                <line x1="16" y1="28" x2="84" y2="28" stroke="#DC2626" stroke-width="4" />
+                <line x1="16" y1="72" x2="84" y2="72" stroke="#DC2626" stroke-width="4" />
+                <ellipse cx="50" cy="50" rx="24" ry="44" stroke="#DC2626" stroke-width="4.5" fill="none" />
+                <line x1="50" y1="6" x2="50" y2="94" stroke="#DC2626" stroke-width="4.5" />
+              </svg>
+              <div style="font-size: 22px; font-weight: 900; color: #02478b; letter-spacing: 0.5px; line-height: 1.2; font-family: 'Inter', system-ui, sans-serif;">
                 TOHOKU SOLUTIONS
               </div>
             </div>
-            <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-top: 3px; margin-left: 34px;">
-              Corporate Training & Development Center | ฝ่ายพัฒนาทรัพยากรบุคคล
+            <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-top: 4px; margin-left: 44px;">
+              Corporate Training & Development Center | TSTraining Center
             </div>
           </div>
           <div style="text-align: right;">
@@ -106,7 +112,7 @@ export async function downloadRegistrationReceiptPdf(
           </div>
         </div>
 
-        {/* Info Grid */}
+        <!-- Info Grid -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; background: #f8fafc; padding: 14px 16px; border-radius: 12px; margin-bottom: 16px; border: 1px solid #e2e8f0; font-size: 11px;">
           <div>
             <div style="color: #64748b; font-weight: 600; margin-bottom: 2px;">หลักสูตรฝึกอบรม (Course Title):</div>
@@ -126,7 +132,7 @@ export async function downloadRegistrationReceiptPdf(
           </div>
         </div>
 
-        {/* Attendees Section */}
+        <!-- Attendees Section -->
         <div style="margin-bottom: 8px; display: flex; justify-content: space-between; align-items: baseline;">
           <div style="font-size: 12px; font-weight: 800; color: #0f172a;">
             รายชื่อผู้ลงทะเบียนในรอบนี้ (จำนวน ${info.attendees.length} ท่าน)
@@ -154,7 +160,7 @@ export async function downloadRegistrationReceiptPdf(
           </tbody>
         </table>
 
-        {/* Footer */}
+        <!-- Footer -->
         <div style="margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; color: #64748b; font-size: 10px;">
           <div>Tohoku Solutions — ระบบบริหารจัดการแผนงานฝึกอบรมองค์กร (Corporate Training System)</div>
           <div>เอกสารอิเล็กทรอนิกส์ยืนยันสถานะสมบูรณ์ ไม่จำเป็นต้องลงนาม</div>
