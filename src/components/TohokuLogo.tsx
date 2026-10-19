@@ -1,43 +1,41 @@
-import React from 'react';
-import { Award, BookOpen, GraduationCap } from 'lucide-react';
+import React, { useState } from 'react';
+import originalLogo from '../assets/TS_logo.png';
 
 interface TohokuLogoProps {
   className?: string;
-  size?: 'sm' | 'md' | 'lg';
-  showText?: boolean;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
+/**
+ * Authentic Original Company Logo from TS_.png
+ * Displayed directly without any modification or redraw, preserving all original details and text.
+ */
 export const TohokuLogo: React.FC<TohokuLogoProps> = ({
   className = '',
   size = 'md',
-  showText = true,
 }) => {
-  const iconSize = size === 'sm' ? 'w-5 h-5' : size === 'lg' ? 'w-8 h-8' : 'w-6 h-6';
-  const boxSize = size === 'sm' ? 'w-7 h-7' : size === 'lg' ? 'w-12 h-12' : 'w-9 h-9';
-  const textSize = size === 'sm' ? 'text-[11px]' : size === 'lg' ? 'text-base' : 'text-xs';
+  const [imgError, setImgError] = useState(false);
+
+  // Height configurations preserving original aspect ratio (302 x 84)
+  const heightClass =
+    size === 'sm'
+      ? 'h-6 sm:h-7'
+      : size === 'lg'
+      ? 'h-11 sm:h-12'
+      : size === 'xl'
+      ? 'h-16 sm:h-18'
+      : 'h-8 sm:h-9';
 
   return (
-    <div className={`flex items-center gap-2.5 ${className}`}>
-      {/* Sleek Modern Corporate Training Center Emblem */}
-      <div
-        className={`${boxSize} rounded-xl bg-gradient-to-br from-[#1e3a8a] via-[#1d4ed8] to-[#0f172a] text-white flex items-center justify-center shadow-md shrink-0 border border-blue-400/30`}
-      >
-        <GraduationCap className={`${iconSize} text-blue-200`} />
-      </div>
-
-      {showText && (
-        <div className="flex flex-col text-left select-none leading-none">
-          <span
-            className={`font-black tracking-wider text-[#0f172a] uppercase ${textSize}`}
-            style={{ fontFamily: "'Inter', sans-serif", letterSpacing: '0.05em' }}
-          >
-            TRAINING CENTER
-          </span>
-          <span className="text-[9px] font-bold text-[#1e3a8a] uppercase tracking-widest mt-0.5">
-            Academy & Development
-          </span>
-        </div>
-      )}
+    <div className={`inline-flex items-center justify-center shrink-0 bg-transparent ${className}`}>
+      <img
+        src={!imgError ? originalLogo : '/TS_logo.png'}
+        alt="Logo"
+        className={`${heightClass} w-auto object-contain select-none`}
+        style={{ mixBlendMode: 'multiply' }}
+        draggable={false}
+        onError={() => setImgError(true)}
+      />
     </div>
   );
 };

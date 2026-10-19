@@ -84,22 +84,11 @@ export async function downloadRegistrationReceiptPdf(
         <!-- Header Bar -->
         <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2.5px solid #1e3a8a; padding-bottom: 14px; margin-bottom: 16px;">
           <div>
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <svg width="34" height="34" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" style="flex-shrink: 0;">
-                <circle cx="50" cy="50" r="44" stroke="#DC2626" stroke-width="5.5" fill="none" />
-                <line x1="6" y1="50" x2="94" y2="50" stroke="#DC2626" stroke-width="4.5" />
-                <ellipse cx="50" cy="50" rx="43" ry="24" stroke="#DC2626" stroke-width="4.5" fill="none" />
-                <line x1="16" y1="28" x2="84" y2="28" stroke="#DC2626" stroke-width="4" />
-                <line x1="16" y1="72" x2="84" y2="72" stroke="#DC2626" stroke-width="4" />
-                <ellipse cx="50" cy="50" rx="24" ry="44" stroke="#DC2626" stroke-width="4.5" fill="none" />
-                <line x1="50" y1="6" x2="50" y2="94" stroke="#DC2626" stroke-width="4.5" />
-              </svg>
-              <div style="font-size: 22px; font-weight: 900; color: #1e3a8a; letter-spacing: 0.5px; line-height: 1.2; font-family: 'Inter', system-ui, sans-serif;">
-                TRAINING CENTER
+            <div>
+              <img src="/TS_logo.png" alt="TOHOKU SOLUTIONS" style="height: 36px; width: auto; object-fit: contain; display: block;" />
+              <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-top: 4px;">
+                Corporate Training & Development Center
               </div>
-            </div>
-            <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-top: 4px; margin-left: 44px;">
-              Corporate Training & Development Center
             </div>
           </div>
           <div style="text-align: right;">
