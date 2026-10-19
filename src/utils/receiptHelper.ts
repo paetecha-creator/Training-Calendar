@@ -94,12 +94,12 @@ export async function downloadRegistrationReceiptPdf(
                 <ellipse cx="50" cy="50" rx="24" ry="44" stroke="#DC2626" stroke-width="4.5" fill="none" />
                 <line x1="50" y1="6" x2="50" y2="94" stroke="#DC2626" stroke-width="4.5" />
               </svg>
-              <div style="font-size: 22px; font-weight: 900; color: #02478b; letter-spacing: 0.5px; line-height: 1.2; font-family: 'Inter', system-ui, sans-serif;">
-                TOHOKU SOLUTIONS
+              <div style="font-size: 22px; font-weight: 900; color: #1e3a8a; letter-spacing: 0.5px; line-height: 1.2; font-family: 'Inter', system-ui, sans-serif;">
+                TRAINING CENTER
               </div>
             </div>
             <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-top: 4px; margin-left: 44px;">
-              Corporate Training & Development Center | TSTraining Center
+              Corporate Training & Development Center
             </div>
           </div>
           <div style="text-align: right;">
@@ -162,7 +162,7 @@ export async function downloadRegistrationReceiptPdf(
 
         <!-- Footer -->
         <div style="margin-top: 24px; padding-top: 12px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; color: #64748b; font-size: 10px;">
-          <div>Tohoku Solutions — ระบบบริหารจัดการแผนงานฝึกอบรมองค์กร (Corporate Training System)</div>
+          <div>ระบบบริหารจัดการแผนงานฝึกอบรมองค์กร (Corporate Training System)</div>
           <div>เอกสารอิเล็กทรอนิกส์ยืนยันสถานะสมบูรณ์ ไม่จำเป็นต้องลงนาม</div>
         </div>
       </div>

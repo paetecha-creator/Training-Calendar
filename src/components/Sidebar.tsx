@@ -67,8 +67,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {/* Company Logo & Subheading */}
         <div className="flex flex-col items-center justify-center text-center mb-4 pb-3 border-b border-slate-200/60">
           <TohokuLogo size="md" className="mb-2" />
-          <h2 className="text-xs font-bold text-slate-800 tracking-tight leading-tight">
-            TOHOKU PIONEER (THAILAND) CO., LTD.
+          <h2 className="text-xs font-black text-slate-800 tracking-tight leading-tight uppercase">
+            {lang === 'th' ? 'ระบบแผนงานฝึกอบรมองค์กร' : 'Corporate Training Portal'}
           </h2>
           <p className="text-[10px] text-slate-500 font-medium mt-0.5">
             {t.corporateTraining}
