@@ -396,10 +396,6 @@ export default function App() {
               setIsAdmin(false);
               setViewMode('calendar');
             }}
-            onOpenAddHoliday={() => {
-              setEditingHoliday(null);
-              setIsHolidayModalOpen(true);
-            }}
             onOpenBatchCourseModal={() => setIsBatchCourseModalOpen(true)}
             lang={lang}
           />
@@ -454,11 +450,6 @@ export default function App() {
                     setIsMobileSidebarOpen(false);
                     setIsAdmin(false);
                     setViewMode('calendar');
-                  }}
-                  onOpenAddHoliday={() => {
-                    setIsMobileSidebarOpen(false);
-                    setEditingHoliday(null);
-                    setIsHolidayModalOpen(true);
                   }}
                   onOpenBatchCourseModal={() => {
                     setIsMobileSidebarOpen(false);

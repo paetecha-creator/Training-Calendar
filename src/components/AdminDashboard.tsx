@@ -38,6 +38,7 @@ import {
   UserCheck,
   ChevronDown,
   FileSpreadsheet,
+  X,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -72,10 +73,57 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return onlyCourses[0]?.id || 'EVT-1001';
   });
 
+  // Course search query in registrations tab
+  const [courseSearchQuery, setCourseSearchQuery] = useState('');
+
+  const filteredCoursesForRegistration = useMemo(() => {
+    if (!courseSearchQuery.trim()) return onlyCourses;
+    const q = courseSearchQuery.toLowerCase().trim();
+    return onlyCourses.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.category.toLowerCase().includes(q) ||
+        (c.start && c.start.toLowerCase().includes(q)) ||
+        (c.status && c.status.toLowerCase().includes(q)) ||
+        (c.location && c.location.toLowerCase().includes(q)) ||
+        (c.description && c.description.toLowerCase().includes(q)) ||
+        (c.id && c.id.toLowerCase().includes(q))
+    );
+  }, [onlyCourses, courseSearchQuery]);
+
+  // Course search query in courses management tab
+  const [courseTabSearchQuery, setCourseTabSearchQuery] = useState('');
+
+  const filteredCoursesTab = useMemo(() => {
+    if (!courseTabSearchQuery.trim()) return onlyCourses;
+    const q = courseTabSearchQuery.toLowerCase().trim();
+    return onlyCourses.filter(
+      (c) =>
+        c.title.toLowerCase().includes(q) ||
+        c.category.toLowerCase().includes(q) ||
+        (c.start && c.start.toLowerCase().includes(q)) ||
+        (c.status && c.status.toLowerCase().includes(q)) ||
+        (c.location && c.location.toLowerCase().includes(q)) ||
+        (c.description && c.description.toLowerCase().includes(q)) ||
+        (c.id && c.id.toLowerCase().includes(q))
+    );
+  }, [onlyCourses, courseTabSearchQuery]);
+
   // Selected course object
   const activeCourse = useMemo(() => {
     return onlyCourses.find((c) => c.id === selectedCourseId) || onlyCourses[0] || null;
   }, [onlyCourses, selectedCourseId]);
+
+  // Auto-select first matching course when search filters the list
+  React.useEffect(() => {
+    if (courseSearchQuery.trim() && filteredCoursesForRegistration.length > 0) {
+      const match = filteredCoursesForRegistration.some((c) => c.id === selectedCourseId);
+      if (!match) {
+        setSelectedCourseId(filteredCoursesForRegistration[0].id);
+        setSelectedAttendeeIds(new Set());
+      }
+    }
+  }, [filteredCoursesForRegistration, courseSearchQuery, selectedCourseId]);
 
   // Attendees filtered by selected course
   const courseAttendees = useMemo(() => {
@@ -456,19 +504,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </>
           )}
 
-          {activeTab === 'holidays' && (
-            <button
-              onClick={() => {
-                setEditingHoliday(null);
-                setIsHolidayModalOpen(true);
-              }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:shadow-xs cursor-pointer transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>{t.addHolidayBtn}</span>
-            </button>
-          )}
-
           <button
             onClick={onRefresh}
             title={lang === 'th' ? 'รีเฟรชข้อมูล' : 'Refresh'}
@@ -502,29 +537,60 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Course Selector & Controls */}
           <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200/80 mb-3 shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="flex items-center gap-3 flex-1 min-w-0">
-              <label className="text-xs font-bold text-slate-700 whitespace-nowrap">{t.selectCourseLabel}</label>
-              <div className="relative flex-1 max-w-md">
-                <select
-                  value={selectedCourseId}
-                  onChange={(e) => {
-                    setSelectedCourseId(e.target.value);
-                    setSelectedAttendeeIds(new Set());
-                  }}
-                  className="w-full pl-3 pr-8 py-2 text-xs font-bold bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] focus:ring-1 focus:ring-[#1e3a8a]/20 outline-none appearance-none cursor-pointer truncate"
-                >
-                  {onlyCourses.map((c) => {
-                    const count = attendees.filter(
-                      (a) => a.courseId === c.id || (c.formSheet && a.formSheet === c.formSheet)
-                    ).length;
-                    return (
-                      <option key={c.id} value={c.id}>
-                        {c.title} ({c.start}) — {count} {t.personsCountSuffix} [{c.status}]
+            <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
+              {/* Course Search Box */}
+              <div className="relative w-full sm:w-56 md:w-64 shrink-0">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder={lang === 'th' ? 'ค้นหาหลักสูตร...' : 'Search course...'}
+                  value={courseSearchQuery}
+                  onChange={(e) => setCourseSearchQuery(e.target.value)}
+                  className="w-full pl-8.5 pr-8 py-2 text-xs font-medium bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] focus:ring-1 focus:ring-[#1e3a8a]/20 outline-none"
+                />
+                {courseSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setCourseSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                    title={lang === 'th' ? 'ล้างการค้นหา' : 'Clear search'}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Course Selector Dropdown */}
+              <div className="flex items-center gap-2 flex-1 min-w-[240px] max-w-lg">
+                <label className="text-xs font-bold text-slate-700 whitespace-nowrap">{t.selectCourseLabel}</label>
+                <div className="relative flex-1">
+                  <select
+                    value={selectedCourseId}
+                    onChange={(e) => {
+                      setSelectedCourseId(e.target.value);
+                      setSelectedAttendeeIds(new Set());
+                    }}
+                    className="w-full pl-3 pr-8 py-2 text-xs font-bold bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] focus:ring-1 focus:ring-[#1e3a8a]/20 outline-none appearance-none cursor-pointer truncate"
+                  >
+                    {filteredCoursesForRegistration.length === 0 ? (
+                      <option value="" disabled>
+                        {lang === 'th' ? 'ไม่พบหลักสูตรที่ตรงกับคำค้น' : 'No matching course'}
                       </option>
-                    );
-                  })}
-                </select>
-                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    ) : (
+                      filteredCoursesForRegistration.map((c) => {
+                        const count = attendees.filter(
+                          (a) => a.courseId === c.id || (c.formSheet && a.formSheet === c.formSheet)
+                        ).length;
+                        return (
+                          <option key={c.id} value={c.id}>
+                            {c.title} ({c.start}) — {count} {t.personsCountSuffix} [{c.status}]
+                          </option>
+                        );
+                      })
+                    )}
+                  </select>
+                  <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
               </div>
 
               {activeCourse && (
@@ -785,6 +851,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* ========================================================= */}
       {activeTab === 'courses' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Course Search Bar in Tab 2 */}
+          <div className="bg-slate-50 p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 mb-3 shrink-0 flex items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder={lang === 'th' ? 'ค้นหาหลักสูตร (ชื่อ, หมวดหมู่, วันที่, สถานที่, วิทยากร)...' : 'Search courses (Title, Category, Date, Location)...'}
+                value={courseTabSearchQuery}
+                onChange={(e) => setCourseTabSearchQuery(e.target.value)}
+                className="w-full pl-8.5 pr-8 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] outline-none"
+              />
+              {courseTabSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setCourseTabSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
+                  title={lang === 'th' ? 'ล้างการค้นหา' : 'Clear search'}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+            <div className="text-xs text-slate-500 font-semibold shrink-0">
+              {lang === 'th' ? `แสดง ${filteredCoursesTab.length} จาก ${onlyCourses.length} หลักสูตร` : `Showing ${filteredCoursesTab.length} of ${onlyCourses.length} courses`}
+            </div>
+          </div>
+
           <div className="flex-1 overflow-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
             <table className="w-full text-left border-collapse text-xs min-w-[900px]">
               <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider select-none">
@@ -801,7 +894,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {onlyCourses.map((c, idx) => {
+                {filteredCoursesTab.map((c, idx) => {
                   const regCount = attendees.filter(
                     (a) => a.courseId === c.id || (c.formSheet && a.formSheet === c.formSheet)
                   ).length;
@@ -923,7 +1016,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs cursor-pointer whitespace-nowrap transition-all"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>เพิ่มวันหยุด</span>
+                <span>{lang === 'th' ? 'เพิ่มวันหยุด' : 'Add Holiday'}</span>
               </button>
             </div>
           </div>

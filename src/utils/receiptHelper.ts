@@ -72,8 +72,8 @@ export async function downloadRegistrationReceiptPdf(
           <td style="padding: 7px 8px; font-weight: bold; color: #0f172a;">${a.fname || ''} ${a.lname || ''}</td>
           <td style="padding: 7px 8px; color: #334155;">${a.dept || '-'}</td>
           <td style="padding: 7px 8px; color: #334155;">${a.pos || '-'}</td>
-          <td style="padding: 7px 8px; color: #475569; font-size: 10px;">${a.exp || '-'}</td>
-          <td style="padding: 7px 8px; color: #475569; font-size: 10px;">${a.app || '-'}</td>
+          <td style="padding: 7px 8px; color: #475569; font-size: 10px;">${a.expectation || a.exp || '-'}</td>
+          <td style="padding: 7px 8px; color: #475569; font-size: 10px;">${a.application || a.app || '-'}</td>
         </tr>
       `
       )

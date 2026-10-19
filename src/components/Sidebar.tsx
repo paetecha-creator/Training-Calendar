@@ -28,7 +28,6 @@ interface SidebarProps {
   onOpenAdminManage: () => void;
   onOpenAdminLogin: () => void;
   onExitAdmin: () => void;
-  onOpenAddHoliday?: () => void;
   onOpenBatchCourseModal?: () => void;
   lang?: Language;
 }
@@ -54,7 +53,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenAdminManage,
   onOpenAdminLogin,
   onExitAdmin,
-  onOpenAddHoliday,
   onOpenBatchCourseModal,
   lang = 'th',
 }) => {
@@ -195,16 +193,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               >
                 <FileSpreadsheet className="w-3.5 h-3.5 text-[#1e3a8a]" />
                 <span>{t.batchUploadCourseSidebar}</span>
-              </button>
-            )}
-
-            {onOpenAddHoliday && (
-              <button
-                onClick={onOpenAddHoliday}
-                className="w-full py-1.5 px-3 text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-rose-600" />
-                <span>{t.addHolidaySidebar}</span>
               </button>
             )}
 
