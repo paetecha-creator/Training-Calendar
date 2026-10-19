@@ -1,6 +1,6 @@
 {
   "name": "Monthly Training Calendar",
-  "description": "ระบบแชร์แผนงานอบรมขององค์กร พร้อมระบบลงทะเบียนและแดชบอร์ดติดตามสถานะแบบเรียลไทม์ เชื่อมต่อ Google Sheets",
+  "description": "ระบบแชร์แผนงานอบรมขององค์กร พร้อมระบบลงทะเบียนและแดชบอร์ดติดตามสถานะแบบเรียลไทม์ ฐานข้อมูล Firebase Cloud Firestore",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

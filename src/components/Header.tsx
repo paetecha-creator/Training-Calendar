@@ -11,7 +11,6 @@ import {
   Menu,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
-import { SPREADSHEET_ID } from '../services/sheetsService';
 
 interface HeaderProps {
   currentDate: Date;
@@ -177,11 +176,11 @@ export const Header: React.FC<HeaderProps> = ({
           {viewMode === 'admin' && (
             <div
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/60 shadow-2xs"
-              title={`เชื่อมต่อ Google Sheets สดตลอดเวลา: ID ${SPREADSHEET_ID}`}
+              title="เชื่อมต่อฐานข้อมูลคลาวด์ Firebase Firestore แบบเรียลไทม์ ซิงค์อัตโนมัติทุกอุปกรณ์"
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
               <span className="font-bold tracking-tight text-[11px] sm:text-xs">
-                Live Sheets
+                Firebase Live ⚡
               </span>
             </div>
           )}
@@ -190,7 +189,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onSync}
             disabled={isSyncing}
-            title="กดเพื่ออัปเดตข้อมูลล่าสุดจาก Google Sheets ทันที"
+            title="กดเพื่ออัปเดตข้อมูลล่าสุดจาก Firebase ทันที"
             className="neu-btn flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-bold text-slate-800 rounded-lg cursor-pointer"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-[#1e3a8a]' : 'text-[#1e3a8a]'}`} />

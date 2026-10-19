@@ -1,0 +1,103 @@
+{
+  "entities": {
+    "event": {
+      "title": "TrainingEvent",
+      "description": "Corporate training course and event details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique event identifier" },
+        "category": { "type": "string", "description": "Training category name" },
+        "title": { "type": "string", "description": "Course title" },
+        "start": { "type": "string", "description": "Start date in YYYY-MM-DD" },
+        "end": { "type": "string", "description": "End date in YYYY-MM-DD" },
+        "startTime": { "type": "string", "description": "Start time in HH:mm" },
+        "endTime": { "type": "string", "description": "End time in HH:mm" },
+        "location": { "type": "string", "description": "Training room or virtual venue" },
+        "description": { "type": "string", "description": "Course synopsis and details" },
+        "color": { "type": "string", "description": "Category background color hex" },
+        "textColor": { "type": "string", "description": "Contrast text color hex" },
+        "status": { "type": "string", "description": "Registration status: เปิด, ปิด, หรือ ไม่ต้องลงทะเบียน" },
+        "openDate": { "type": "string", "description": "Registration opening date" },
+        "closeDate": { "type": "string", "description": "Registration deadline date" },
+        "formSheet": { "type": "string", "description": "Legacy sheet or form registration code" },
+        "isEvent": { "type": "boolean", "description": "True if this is a training course" },
+        "isHoliday": { "type": "boolean", "description": "True if this is an annual holiday" },
+        "maxAttendees": { "type": "number", "description": "Optional capacity limit" },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "Last update ISO timestamp" }
+      },
+      "required": ["id", "title", "start", "category", "status"]
+    },
+    "holiday": {
+      "title": "HolidayItem",
+      "description": "Annual official and corporate holidays",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique holiday identifier" },
+        "date": { "type": "string", "description": "Holiday date in YYYY-MM-DD" },
+        "name": { "type": "string", "description": "Holiday title in Thai/English" },
+        "category": { "type": "string", "description": "Category: วันหยุดนักขัตฤกษ์, วันหยุดบริษัท, วันหยุดชดเชย" },
+        "description": { "type": "string", "description": "Holiday background details" },
+        "createdAt": { "type": "string", "description": "Creation ISO timestamp" },
+        "updatedAt": { "type": "string", "description": "Last update ISO timestamp" }
+      },
+      "required": ["id", "date", "name"]
+    },
+    "attendee": {
+      "title": "AttendeeRow",
+      "description": "Registered attendee for a training course",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique registration attendee ID" },
+        "courseId": { "type": "string", "description": "Target course ID" },
+        "courseTitle": { "type": "string", "description": "Target course title" },
+        "formSheet": { "type": "string", "description": "Registration code/sheet identifier" },
+        "code": { "type": "string", "description": "Employee ID code" },
+        "sex": { "type": "string", "description": "Prefix: Mr., Ms., Mrs." },
+        "fname": { "type": "string", "description": "Employee first name" },
+        "lname": { "type": "string", "description": "Employee last name" },
+        "dept": { "type": "string", "description": "Department or section" },
+        "pos": { "type": "string", "description": "Job position or title" },
+        "exp": { "type": "string", "description": "Experience years or extension phone" },
+        "app": { "type": "string", "description": "Approver name" },
+        "rem": { "type": "string", "description": "Special remarks" },
+        "submitterName": { "type": "string", "description": "Name of person submitting the form" },
+        "submitterDept": { "type": "string", "description": "Department of submitter" },
+        "submitterPhone": { "type": "string", "description": "Contact phone of submitter" },
+        "receiptNo": { "type": "string", "description": "Registration confirmation code" },
+        "rowIndex": { "type": "number", "description": "Numeric sort order" },
+        "createdAt": { "type": "string", "description": "Registration ISO timestamp" }
+      },
+      "required": ["id", "courseId", "fname", "lname"]
+    },
+    "setting": {
+      "title": "SystemSetting",
+      "description": "Application settings and configuration",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Setting key identifier" },
+        "value": { "type": "string", "description": "Setting value or JSON payload" },
+        "updatedAt": { "type": "string", "description": "Last update ISO timestamp" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/events/{eventId}": {
+      "schema": "event",
+      "description": "Training courses and calendar events"
+    },
+    "/holidays/{holidayId}": {
+      "schema": "holiday",
+      "description": "Annual holidays"
+    },
+    "/attendees/{attendeeId}": {
+      "schema": "attendee",
+      "description": "Registered attendees across all devices"
+    },
+    "/settings/{settingId}": {
+      "schema": "setting",
+      "description": "Global settings and configuration"
+    }
+  }
+}

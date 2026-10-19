@@ -137,8 +137,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   return (
     <div className="flex-1 h-full neu-card rounded-2xl p-2.5 sm:p-3 md:p-4 flex flex-col min-w-0 overflow-hidden">
-      {/* Month Days Header: High contrast, prominent, and distinct color-coded badges */}
-      <div className="grid grid-cols-7 gap-1 sm:gap-1.5 md:gap-2 mb-2 sm:mb-2.5 shrink-0">
+      {/* Month Days Header: Sunday column reduced by 60% (0.4fr) to maximize workday space */}
+      <div className="grid grid-cols-[0.4fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-1 sm:gap-1.5 md:gap-2 mb-2 sm:mb-2.5 shrink-0">
         {weekHeaders.map((day, idx) => {
           const isSun = idx === 0;
           const isSat = idx === 6;
@@ -146,7 +146,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
           return (
             <div
               key={day.en}
-              className={`text-center py-1.5 sm:py-2.5 px-1 rounded-xl transition-all flex flex-col items-center justify-center select-none shadow-[2px_2px_6px_rgba(0,0,0,0.06),-2px_-2px_6px_rgba(255,255,255,0.9)] ${
+              className={`text-center py-1.5 sm:py-2.5 px-0.5 sm:px-1 rounded-xl transition-all flex flex-col items-center justify-center select-none shadow-[2px_2px_6px_rgba(0,0,0,0.06),-2px_-2px_6px_rgba(255,255,255,0.9)] ${
                 isSun
                   ? 'bg-gradient-to-b from-rose-50 via-rose-100/80 to-rose-50 text-rose-700 border-2 border-rose-300 ring-1 ring-rose-200/60 shadow-xs'
                   : isSat
@@ -154,20 +154,19 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   : 'bg-gradient-to-b from-white via-slate-50 to-slate-100/90 text-slate-900 border-2 border-slate-300/90 shadow-xs hover:border-[#1e3a8a]/50'
               }`}
             >
-              <span className="text-xs sm:text-sm md:text-base font-black tracking-wider leading-none">
+              <span className={`font-black tracking-wider leading-none ${isSun ? 'text-[11px] sm:text-xs md:text-sm' : 'text-xs sm:text-sm md:text-base'}`}>
                 {day.en}
               </span>
-              <span className="text-[10px] sm:text-[11px] font-extrabold mt-1 leading-none tracking-tight opacity-90">
-                <span className="sm:hidden">{day.th}</span>
-                <span className="hidden sm:inline">{day.thFull}</span>
+              <span className="text-[10px] sm:text-[11px] font-extrabold mt-1 leading-none tracking-tight opacity-90 truncate max-w-full">
+                {isSun ? 'อา.' : <><span className="sm:hidden">{day.th}</span><span className="hidden sm:inline">{day.thFull}</span></>}
               </span>
             </div>
           );
         })}
       </div>
 
-      {/* Calendar Matrix Grid: Uniform row height with scrollable course items per day */}
-      <div className="grid grid-cols-7 gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto p-1.5 [grid-auto-rows:minmax(145px,1fr)]">
+      {/* Calendar Matrix Grid: Sunday column reduced by 60% (0.4fr), workdays get maximum space */}
+      <div className="grid grid-cols-[0.4fr_1fr_1fr_1fr_1fr_1fr_1fr] gap-1.5 sm:gap-2 flex-1 min-h-0 overflow-y-auto p-1.5 [grid-auto-rows:minmax(145px,1fr)]">
         {calendarDays.map((day) => {
           // Find events on this date
           const dayEvents = filteredEvents.filter((ev) => {
@@ -198,7 +197,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               <div className="flex items-center justify-between w-full pb-1.5 mb-1.5 border-b-2 border-slate-200/80 shrink-0 z-10 bg-inherit">
                 <div className="flex items-center gap-1.5">
                   <span
-                    className={`text-xs sm:text-sm font-black flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg transition-all shadow-xs shrink-0 ${
+                    className={`font-black flex items-center justify-center rounded-lg transition-all shadow-xs shrink-0 ${
+                      day.isSunday
+                        ? 'w-5.5 h-5.5 sm:w-6 sm:h-6 text-[10px] sm:text-xs'
+                        : 'w-7 h-7 sm:w-8 sm:h-8 text-xs sm:text-sm'
+                    } ${
                       day.isToday
                         ? 'bg-gradient-to-br from-[#1e3a8a] to-[#0f172a] text-white border-2 border-[#1e3a8a] ring-2 ring-blue-300/80 font-black shadow-md'
                         : day.isSunday

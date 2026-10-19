@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { TrainingEvent, TrainingCategory, SessionRegistrationData } from './types';
+import { TrainingEvent, TrainingCategory, SessionRegistrationData, HolidayItem } from './types';
 import {
-  getEventsFromSheet,
-  saveEventToSheet,
-  deleteEventFromSheet,
-  submitRegistrationData,
-  flushPendingSyncQueue,
-  initSheetsConfig,
-} from './services/sheetsService';
-import { initAuth, googleSignIn, logoutGoogle, db } from './services/firebase';
-import { onSnapshot, collection } from 'firebase/firestore';
+  subscribeEvents,
+  subscribeHolidays,
+  subscribeAttendees,
+  saveEventToFirestore,
+  deleteEventFromFirestore,
+  saveHolidayToFirestore,
+  AttendeeWithMeta,
+} from './services/firebaseService';
+import { initAuth, googleSignIn, logoutGoogle } from './services/firebase';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { CalendarView } from './components/CalendarView';
@@ -20,6 +20,7 @@ import { RegisterModal } from './components/RegisterModal';
 import { SelectCourseModal } from './components/SelectCourseModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLoginModal } from './components/AdminLoginModal';
+import { HolidayFormModal } from './components/HolidayFormModal';
 import { User } from 'firebase/auth';
 import { CheckCircle2, X, Filter } from 'lucide-react';
 
@@ -34,14 +35,15 @@ const ALL_CATEGORIES: TrainingCategory[] = [
 export default function App() {
   const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 9, 1));
   const [viewMode, setViewMode] = useState<'calendar' | 'list' | 'admin'>('calendar');
-  const [events, setEvents] = useState<TrainingEvent[]>([]);
+  const [courses, setCourses] = useState<TrainingEvent[]>([]);
+  const [holidays, setHolidays] = useState<HolidayItem[]>([]);
+  const [attendees, setAttendees] = useState<AttendeeWithMeta[]>([]);
   const [selectedCategories, setSelectedCategories] = useState<string[]>(ALL_CATEGORIES);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
-  // Authentication & Google Sheets
+  // Authentication & Admin State
   const [user, setUser] = useState<User | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [syncStatus, setSyncStatus] = useState<{
@@ -58,8 +60,10 @@ export default function App() {
   const [registeringEvent, setRegisteringEvent] = useState<TrainingEvent | null>(null);
   const [isSelectCourseModalOpen, setIsSelectCourseModalOpen] = useState(false);
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
+  const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState<HolidayItem | null>(null);
 
-  // Session registration tracking for "แก้ไขข้อมูลล่าสุด"
+  // Session registration tracking for "ดู/แก้ไขข้อมูลที่ลงทะเบียนล่าสุด"
   const [sessionRegData, setSessionRegData] = useState<SessionRegistrationData | null>(() => {
     try {
       const saved = localStorage.getItem('training_session_reg');
@@ -70,79 +74,66 @@ export default function App() {
     return null;
   });
 
-  // Load events
-  const loadEvents = useCallback(
-    async (token?: string | null) => {
-      setIsSyncing(true);
-      try {
-        const res = await getEventsFromSheet(token ?? accessToken);
-        setEvents(res.events);
-
-        if (res.source === 'google-sheets') {
-          setSyncStatus({
-            text: 'เชื่อมต่อและซิงค์ข้อมูลกับ Google Sheets สำเร็จ',
-            type: 'success',
-          });
-        }
-      } catch (err: unknown) {
-        console.error('Load events error', err);
-      } finally {
-        setIsSyncing(false);
-      }
-    },
-    [accessToken]
-  );
-
-  // Continuous sync: Fetch on mount, poll every 25 seconds, sync on window focus, and real-time Firestore listener
+  // Real-time Firestore Live Subscriptions for Courses, Holidays, and Attendees
   useEffect(() => {
-    initSheetsConfig();
-    loadEvents(accessToken);
+    setIsSyncing(true);
 
-    const intervalId = setInterval(() => {
-      loadEvents(accessToken);
-    }, 25000);
+    // 1. Subscribe to training events
+    const unsubEvents = subscribeEvents((loadedCourses) => {
+      setCourses(loadedCourses);
+      setIsSyncing(false);
+    });
 
-    const handleFocus = () => {
-      loadEvents(accessToken);
-    };
-    window.addEventListener('focus', handleFocus);
+    // 2. Subscribe to annual holidays
+    const unsubHolidays = subscribeHolidays((loadedHolidays) => {
+      setHolidays(loadedHolidays);
+    });
 
-    let unsubscribeFirestore = () => {};
-    try {
-      unsubscribeFirestore = onSnapshot(collection(db, 'events'), () => {
-        loadEvents(accessToken);
-      });
-    } catch (e) {
-      console.warn('Firestore snapshot error:', e);
-    }
+    // 3. Subscribe to all attendees
+    const unsubAttendees = subscribeAttendees((loadedAttendees) => {
+      setAttendees(loadedAttendees);
+    });
 
-    const unsubscribe = initAuth(
-      async (authUser, token) => {
+    // 4. Initialize Firebase Auth state listener
+    const unsubAuth = initAuth(
+      (authUser) => {
         setUser(authUser);
-        setAccessToken(token);
         setIsAdmin(true);
-        loadEvents(token);
-        if (token) {
-          try {
-            await flushPendingSyncQueue(token);
-          } catch (e) {
-            console.error('Auto-flush error:', e);
-          }
-        }
       },
       () => {
         setUser(null);
-        setAccessToken(null);
       }
     );
 
     return () => {
-      clearInterval(intervalId);
-      window.removeEventListener('focus', handleFocus);
-      unsubscribe();
-      unsubscribeFirestore();
+      unsubEvents();
+      unsubHolidays();
+      unsubAttendees();
+      unsubAuth();
     };
-  }, [loadEvents, accessToken]);
+  }, []);
+
+  // Merge courses with holidays into allCalendarEvents for CalendarView and ListView
+  const allCalendarEvents = useMemo<TrainingEvent[]>(() => {
+    const holidayEvents: TrainingEvent[] = holidays.map((h) => ({
+      id: h.id || `HOL-${h.date}`,
+      category: h.category || 'วันหยุดนักขัตฤกษ์',
+      title: h.name,
+      start: h.date,
+      end: h.date,
+      startTime: '',
+      endTime: '',
+      location: '',
+      description: h.description || '',
+      color: '#FFE4E6',
+      textColor: '#E11D48',
+      status: 'ไม่ต้องลงทะเบียน',
+      isEvent: false,
+      isHoliday: true,
+    }));
+
+    return [...courses, ...holidayEvents];
+  }, [courses, holidays]);
 
   // Category Toggle
   const toggleCategory = (cat: string) => {
@@ -180,20 +171,12 @@ export default function App() {
       const result = await googleSignIn();
       if (result) {
         setUser(result.user);
-        setAccessToken(result.accessToken);
         setIsAdmin(true);
-        await loadEvents(result.accessToken);
-        try {
-          const flushRes = await flushPendingSyncQueue(result.accessToken);
-          if (flushRes.flushedCount > 0) {
-            setSyncStatus({
-              text: `เชื่อมต่อ Google Sheets สำเร็จ และซิงค์ข้อมูลค้างส่งลงชีตแล้ว ${flushRes.flushedCount} รายการ`,
-              type: 'success',
-            });
-          }
-        } catch (e) {
-          console.error(e);
-        }
+        setViewMode('admin');
+        setSyncStatus({
+          text: 'เข้าสู่ระบบผู้ดูแลระบบด้วย Google สำเร็จ (Firebase Cloud Sync)',
+          type: 'success',
+        });
       }
     } catch (err) {
       console.error('Google sign-in error', err);
@@ -205,12 +188,11 @@ export default function App() {
   const handleGoogleSignOut = async () => {
     await logoutGoogle();
     setUser(null);
-    setAccessToken(null);
     setIsAdmin(false);
-    loadEvents(null);
+    setViewMode('calendar');
   };
 
-  // Event Handlers
+  // Event Handlers (Add, Edit, Delete courses)
   const handleOpenAddEvent = (dateStr?: string) => {
     setEventToEdit(null);
     setInitialDateForNewEvent(dateStr || '');
@@ -227,54 +209,52 @@ export default function App() {
   ) => {
     setIsSyncing(true);
     try {
-      const res = await saveEventToSheet(payload, accessToken);
-      if (res.success) {
-        await loadEvents(accessToken);
-        setSyncStatus({
-          text: `บันทึกหลักสูตร "${payload.title}" เรียบร้อยแล้ว`,
-          type: 'success',
-        });
-      }
+      await saveEventToFirestore(payload);
+      setSyncStatus({
+        text: `บันทึกหลักสูตร "${payload.title}" เรียบร้อยแล้ว (ซิงค์สดลง Firebase ทันที)`,
+        type: 'success',
+      });
+      setIsFormModalOpen(false);
+      setTimeout(() => setSyncStatus(null), 3000);
     } catch (err) {
       console.error(err);
+      alert('เกิดข้อผิดพลาดในการบันทึกหลักสูตร');
     } finally {
       setIsSyncing(false);
     }
   };
 
   const handleDeleteEvent = async (eventId: string) => {
+    if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบหลักสูตรนี้?')) return;
     setIsSyncing(true);
     try {
-      const res = await deleteEventFromSheet(eventId, accessToken);
-      if (res.success) {
-        await loadEvents(accessToken);
-        setSyncStatus({ text: 'ลบหลักสูตรเรียบร้อยแล้ว', type: 'success' });
-      }
+      await deleteEventFromFirestore(eventId);
+      setSyncStatus({ text: 'ลบหลักสูตรเรียบร้อยแล้ว', type: 'success' });
+      setSelectedEvent(null);
+      setTimeout(() => setSyncStatus(null), 3000);
     } catch (err) {
       console.error(err);
+      alert('เกิดข้อผิดพลาดในการลบหลักสูตร');
     } finally {
       setIsSyncing(false);
     }
   };
 
+  // Holiday Handlers
+  const handleSaveHoliday = async (
+    data: Partial<HolidayItem> & { date: string; name: string }
+  ) => {
+    await saveHolidayToFirestore(data);
+    setSyncStatus({
+      text: `บันทึกวันหยุด "${data.name}" เรียบร้อยแล้ว (อัปเดตบนปฏิทินทันที)`,
+      type: 'success',
+    });
+    setTimeout(() => setSyncStatus(null), 3000);
+  };
+
   // Registration Handlers
   const handleStartRegistration = (course: TrainingEvent) => {
     setRegisteringEvent(course);
-  };
-
-  const handleSubmitRegistration = async (payload: {
-    isEditMode: boolean;
-    courseId: string;
-    courseTitle: string;
-    formSheet: string;
-    rowIndices?: number[];
-    data: Array<[string, string, string, string, string, string, string, string, string]>;
-    submitterName: string;
-    submitterDept: string;
-    submitterPhone: string;
-  }) => {
-    const res = await submitRegistrationData(payload, accessToken);
-    return res;
   };
 
   const handleRegistrationSuccess = (data: SessionRegistrationData) => {
@@ -288,7 +268,7 @@ export default function App() {
 
   const handleEditLatestSubmission = () => {
     if (!sessionRegData) return;
-    const foundCourse = events.find((e) => e.id === sessionRegData.courseId);
+    const foundCourse = courses.find((e) => e.id === sessionRegData.courseId);
     if (foundCourse) {
       setRegisteringEvent(foundCourse);
     } else {
@@ -312,25 +292,23 @@ export default function App() {
 
   // Open courses for registration
   const openCourses = useMemo(() => {
-    return events.filter(
-      (ev) => ev.isEvent && ev.status === 'เปิด' && Boolean(ev.formSheet)
-    );
-  }, [events]);
+    return courses.filter((ev) => ev.isEvent && ev.status === 'เปิด');
+  }, [courses]);
 
   // Category counts
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    events.forEach((ev) => {
+    courses.forEach((ev) => {
       if (ev.isEvent && ev.category) {
         counts[ev.category] = (counts[ev.category] || 0) + 1;
       }
     });
     return counts;
-  }, [events]);
+  }, [courses]);
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#eef2f6] text-slate-800 relative">
-      {/* Top Navbar: Full-width */}
+      {/* Top Navbar */}
       <Header
         currentDate={currentDate}
         onPrevMonth={handlePrevMonth}
@@ -341,10 +319,16 @@ export default function App() {
         user={user}
         isAdmin={isAdmin}
         isSyncing={isSyncing}
-        onSync={() => loadEvents(accessToken)}
+        onSync={() => {
+          setIsSyncing(true);
+          setTimeout(() => setIsSyncing(false), 500);
+        }}
         onGoogleSignIn={handleGoogleSignIn}
         onGoogleSignOut={handleGoogleSignOut}
-        onExitAdmin={() => setIsAdmin(false)}
+        onExitAdmin={() => {
+          setIsAdmin(false);
+          setViewMode('calendar');
+        }}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onToggleMobileMenu={() => setIsMobileSidebarOpen(true)}
@@ -352,7 +336,7 @@ export default function App() {
 
       {/* Sync Status Banner (Only visible to Admin) */}
       {isAdmin && syncStatus && (
-        <div className="mx-3 mt-1.5 px-4 py-2 text-xs font-semibold flex items-center justify-between rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200/80 shrink-0">
+        <div className="mx-3 mt-1.5 px-4 py-2 text-xs font-semibold flex items-center justify-between rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-200/80 shrink-0 shadow-2xs">
           <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -368,9 +352,9 @@ export default function App() {
         </div>
       )}
 
-      {/* Main Container: Full viewport height and width */}
-      <main className="flex-1 w-full p-2 sm:p-2.5 md:p-3.5 flex flex-col lg:flex-row gap-2.5 sm:gap-3.5 min-h-0 overflow-hidden">
-        {/* Desktop Sidebar: Permanent left column */}
+      {/* Main Container */}
+      <main className="flex-1 w-full p-2 sm:p-2.5 md:p-3 flex flex-col lg:flex-row gap-2 sm:gap-3 min-h-0 overflow-hidden">
+        {/* Desktop Sidebar: Width reduced by 10% (lg:w-64 xl:w-72) */}
         <div className="hidden lg:block h-full shrink-0">
           <Sidebar
             selectedCategories={selectedCategories}
@@ -384,7 +368,14 @@ export default function App() {
             isAdmin={isAdmin}
             onOpenAdminManage={() => setViewMode('admin')}
             onOpenAdminLogin={() => setIsAdminLoginModalOpen(true)}
-            onExitAdmin={() => setIsAdmin(false)}
+            onExitAdmin={() => {
+              setIsAdmin(false);
+              setViewMode('calendar');
+            }}
+            onOpenAddHoliday={() => {
+              setEditingHoliday(null);
+              setIsHolidayModalOpen(true);
+            }}
           />
         </div>
 
@@ -395,7 +386,7 @@ export default function App() {
               className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity"
               onClick={() => setIsMobileSidebarOpen(false)}
             />
-            <div className="relative w-80 max-w-[85vw] h-full bg-[#eef2f6] p-3 flex flex-col z-10 shadow-2xl overflow-y-auto">
+            <div className="relative w-72 max-w-[85vw] h-full bg-[#eef2f6] p-3 flex flex-col z-10 shadow-2xl overflow-y-auto">
               <div className="flex items-center justify-between pb-2 mb-1 border-b border-slate-200/80">
                 <span className="font-extrabold text-xs text-[#1e3a8a] uppercase tracking-wider">
                   เมนู & หมวดหมู่หลักสูตร
@@ -436,6 +427,12 @@ export default function App() {
                   onExitAdmin={() => {
                     setIsMobileSidebarOpen(false);
                     setIsAdmin(false);
+                    setViewMode('calendar');
+                  }}
+                  onOpenAddHoliday={() => {
+                    setIsMobileSidebarOpen(false);
+                    setEditingHoliday(null);
+                    setIsHolidayModalOpen(true);
                   }}
                 />
               </div>
@@ -443,11 +440,11 @@ export default function App() {
           </div>
         )}
 
-        {/* Dynamic Main View: Full-height and full-width */}
+        {/* Dynamic Main View */}
         {viewMode === 'calendar' ? (
           <CalendarView
             currentDate={currentDate}
-            events={events}
+            events={allCalendarEvents}
             selectedCategories={selectedCategories}
             isAdmin={isAdmin}
             onSelectEvent={(ev) => setSelectedEvent(ev)}
@@ -456,7 +453,7 @@ export default function App() {
           />
         ) : viewMode === 'list' ? (
           <ListView
-            events={events}
+            events={allCalendarEvents}
             selectedCategories={selectedCategories}
             isAdmin={isAdmin}
             onSelectEvent={(ev) => setSelectedEvent(ev)}
@@ -468,11 +465,15 @@ export default function App() {
           />
         ) : (
           <AdminDashboard
-            events={events}
-            accessToken={accessToken}
-            onRefreshEvents={() => loadEvents(accessToken)}
-            isSyncing={isSyncing}
-            onGoogleSignIn={handleGoogleSignIn}
+            events={courses}
+            holidays={holidays}
+            attendees={attendees}
+            onOpenNewEventModal={() => handleOpenAddEvent()}
+            onEditEvent={(ev) => handleOpenEditEvent(ev)}
+            onRefresh={() => {
+              setIsSyncing(true);
+              setTimeout(() => setIsSyncing(false), 400);
+            }}
           />
         )}
       </main>
@@ -491,7 +492,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Modals */}
+      {/* Course Detail Modal */}
       <EventModal
         event={selectedEvent}
         onClose={() => setSelectedEvent(null)}
@@ -501,6 +502,7 @@ export default function App() {
         onDelete={(id) => handleDeleteEvent(id)}
       />
 
+      {/* Course Create/Edit Modal */}
       <EventFormModal
         isOpen={isFormModalOpen}
         event={eventToEdit}
@@ -509,16 +511,17 @@ export default function App() {
         onSave={handleSaveEvent}
       />
 
+      {/* Modern Course Registration Modal (Direct to Firebase Firestore) */}
       <RegisterModal
         isOpen={Boolean(registeringEvent)}
         event={registeringEvent}
         initialData={sessionRegData}
         isAdmin={isAdmin}
         onClose={() => setRegisteringEvent(null)}
-        onSubmit={handleSubmitRegistration}
         onRegistrationSuccess={handleRegistrationSuccess}
       />
 
+      {/* Course Selection Modal */}
       <SelectCourseModal
         isOpen={isSelectCourseModalOpen}
         openCourses={openCourses}
@@ -526,6 +529,7 @@ export default function App() {
         onSelectCourse={(course) => handleStartRegistration(course)}
       />
 
+      {/* Admin Login Modal */}
       <AdminLoginModal
         isOpen={isAdminLoginModalOpen}
         onClose={() => setIsAdminLoginModalOpen(false)}
@@ -534,6 +538,17 @@ export default function App() {
           setIsAdmin(true);
           setViewMode('admin');
         }}
+      />
+
+      {/* Annual Holiday Add/Edit Modal (For Admin) */}
+      <HolidayFormModal
+        isOpen={isHolidayModalOpen}
+        holiday={editingHoliday}
+        onClose={() => {
+          setIsHolidayModalOpen(false);
+          setEditingHoliday(null);
+        }}
+        onSave={handleSaveHoliday}
       />
     </div>
   );

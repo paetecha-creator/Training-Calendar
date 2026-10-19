@@ -30,11 +30,15 @@ export interface TrainingEvent {
 }
 
 export interface HolidayItem {
-  date: string;
+  id?: string;
+  date: string; // YYYY-MM-DD
   name: string;
+  category?: 'วันหยุดนักขัตฤกษ์' | 'วันหยุดบริษัท' | 'วันหยุดชดเชย' | string;
+  description?: string;
 }
 
 export interface AttendeeRow {
+  id?: string;
   code: string;
   sex: 'Mr.' | 'Ms.' | 'Mrs.';
   fname: string;
@@ -48,6 +52,7 @@ export interface AttendeeRow {
   submitterDept?: string;
   submitterPhone?: string;
   rowIndex?: number;
+  createdAt?: string;
 }
 
 export interface RegistrationPayload {

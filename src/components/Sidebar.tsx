@@ -1,16 +1,15 @@
-import React from 'react';
 import {
   UserCheck,
   Edit3,
-  ExternalLink,
   ShieldCheck,
   CheckSquare,
   Square,
   LogOut,
   CheckCheck,
+  Sparkles,
+  Calendar,
 } from 'lucide-react';
 import { TrainingCategory } from '../types';
-import { SPREADSHEET_ID } from '../services/sheetsService';
 import { TohokuLogo } from './TohokuLogo';
 
 interface SidebarProps {
@@ -26,6 +25,7 @@ interface SidebarProps {
   onOpenAdminManage: () => void;
   onOpenAdminLogin: () => void;
   onExitAdmin: () => void;
+  onOpenAddHoliday?: () => void;
 }
 
 const CATEGORIES: Array<{ key: TrainingCategory; label: string; color: string }> = [
@@ -49,11 +49,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenAdminManage,
   onOpenAdminLogin,
   onExitAdmin,
+  onOpenAddHoliday,
 }) => {
   const isAllSelected = selectedCategories.length === CATEGORIES.length;
 
   return (
-    <aside className="w-full lg:w-72 xl:w-80 h-full neu-card rounded-2xl p-4 md:p-5 flex flex-col justify-between shrink-0 overflow-y-auto">
+    <aside className="w-full lg:w-64 xl:w-72 h-full neu-card rounded-2xl p-3.5 md:p-4 flex flex-col justify-between shrink-0 overflow-y-auto">
       <div>
         {/* Company Logo & Subheading */}
         <div className="flex flex-col items-center justify-center text-center mb-5 pb-4 border-b border-slate-200/60">
@@ -166,14 +167,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Footer Admin Section (Bottom of Left Sidebar - CSS selector 6: debossed/embossed tactile button) */}
+      {/* Footer Admin Section (Bottom of Left Sidebar - CSS selector 6) */}
       <div className="pt-3.5 space-y-2 mt-auto border-t border-slate-200/60">
         {isAdmin ? (
-          <div className="p-3 neu-inset rounded-xl bg-slate-50 border border-slate-200/80">
-            <div className="flex items-center justify-between mb-2">
+          <div className="p-3 neu-inset rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#1e3a8a]">
                 <ShieldCheck className="w-4 h-4 text-[#1e3a8a]" />
-                <span>โหมดผู้ดูแลระบบ (Admin)</span>
+                <span>แอดมิน (Admin Control)</span>
               </div>
               <button
                 onClick={onExitAdmin}
@@ -183,6 +184,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <LogOut className="w-3.5 h-3.5" />
               </button>
             </div>
+
             <button
               onClick={onOpenAdminManage}
               className="w-full py-1.5 px-3 text-xs font-bold neu-btn text-slate-700 hover:text-[#1e3a8a] rounded-lg transition-all cursor-pointer text-center"
@@ -190,23 +192,27 @@ export const Sidebar: React.FC<SidebarProps> = ({
               จัดการข้อมูลการลงทะเบียน
             </button>
 
-            {/* Google Sheets link visible ONLY to Admin */}
-            <div className="mt-2 pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px] text-slate-400">
-              <span>Google Sheet ID:</span>
-              <a
-                href={`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit`}
-                target="_blank"
-                rel="noopener noreferrer"
-                title="เปิด Google Sheets ในแท็บใหม่"
-                className="flex items-center gap-1 text-[#1e3a8a] hover:underline font-mono"
+            {onOpenAddHoliday && (
+              <button
+                onClick={onOpenAddHoliday}
+                className="w-full py-1.5 px-3 text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
               >
-                1gqp55...
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
+                <Sparkles className="w-3.5 h-3.5 text-rose-600" />
+                <span>+ เพิ่มข้อมูลวันหยุดประจำปี</span>
+              </button>
+            )}
+
+            {/* Firebase Live Cloud Database status */}
+            <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px] text-slate-500 font-medium">
+              <span className="flex items-center gap-1 text-emerald-700 font-bold">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Firebase Cloud Live
+              </span>
+              <span className="text-[10px] text-slate-400">ซิงค์สดทุกเครื่อง</span>
             </div>
           </div>
         ) : (
-          /* General User: Clean Admin Login Button at the bottom of left sidebar (CSS selector 6) */
+          /* General User: Clean Admin Login Button at bottom */
           <button
             onClick={onOpenAdminLogin}
             className="w-full py-2.5 px-3 text-xs font-bold text-slate-700 hover:text-[#1e3a8a] neu-btn rounded-xl transition-all flex items-center justify-center gap-2 cursor-pointer"

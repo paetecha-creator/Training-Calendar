@@ -1,10 +1,23 @@
-import { TrainingEvent, AttendeeRow, RegistrationPayload, TrainingCategory } from '../types';
-import { doc, getDoc, setDoc, deleteDoc, getDocs, collection } from 'firebase/firestore';
+import {
+  TrainingEvent,
+  AttendeeRow,
+  RegistrationPayload,
+  TrainingCategory,
+  HolidayItem,
+  FormSheetName,
+} from '../types';
+import {
+  doc,
+  getDoc,
+  setDoc,
+  deleteDoc,
+  getDocs,
+  collection,
+  onSnapshot,
+  query,
+  orderBy,
+} from 'firebase/firestore';
 import { db } from './firebase';
-
-export const SPREADSHEET_ID = '1gqp55Bp-HyDihtbHQGpyeVglHAXCQwXTxnefK8xVozs';
-export const MASTER_SHEET = 'Master';
-export const HOLIDAY_SHEET = 'Holiday';
 
 export function getContrastColor(hexcolor: string): string {
   if (!hexcolor) return '#1e293b';
@@ -27,82 +40,8 @@ export const CATEGORY_COLORS: Record<TrainingCategory, string> = {
   Other: '#EAEAEA',
 };
 
-// Thai official holidays list
-const OFFICIAL_HOLIDAYS = [
-  { date: '2026-01-01', title: 'วันขึ้นปีใหม่' },
-  { date: '2026-03-03', title: 'วันมาฆบูชา' },
-  { date: '2026-04-06', title: 'วันจักรี' },
-  { date: '2026-04-13', title: 'วันสงกรานต์' },
-  { date: '2026-04-14', title: 'วันสงกรานต์' },
-  { date: '2026-04-15', title: 'วันสงกรานต์' },
-  { date: '2026-05-01', title: 'วันแรงงานแห่งชาติ' },
-  { date: '2026-05-04', title: 'วันฉัตรมงคล' },
-  { date: '2026-05-31', title: 'วันวิสาขบูชา' },
-  { date: '2026-06-03', title: 'วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าฯ พระบรมราชินี' },
-  { date: '2026-07-28', title: 'วันเฉลิมพระชนมพรรษาพระบาทสมเด็จพระวชิรเกล้าเจ้าอยู่หัว' },
-  { date: '2026-07-29', title: 'วันอาสาฬหบูชา' },
-  { date: '2026-07-30', title: 'วันเข้าพรรษา' },
-  { date: '2026-08-12', title: 'วันแม่แห่งชาติ' },
-  { date: '2026-10-13', title: 'วันนวมินทรมหาราช' },
-  { date: '2026-10-23', title: 'วันปิยมหาราช' },
-  { date: '2026-12-05', title: 'วันพ่อแห่งชาติ / วันชาติ' },
-  { date: '2026-12-10', title: 'วันรัฐธรรมนูญ' },
-  { date: '2026-12-31', title: 'วันสิ้นปี' },
-];
-
-/**
- * Format ISO or sheet date string to YYYY-MM-DD in Asia/Bangkok timezone
- */
-export function parseIsoDateToBangkok(val: unknown): string {
-  if (!val) return '';
-  const str = String(val).trim();
-  if (!str) return '';
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    return str;
-  }
-  try {
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) {
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Bangkok',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(d);
-    }
-  } catch {
-    // fallback
-  }
-  return str;
-}
-
-/**
- * Format ISO or sheet time string to HH:mm in Asia/Bangkok timezone
- */
-export function parseIsoTimeToBangkok(val: unknown): string {
-  if (!val) return '';
-  const str = String(val).trim();
-  if (!str) return '';
-  if (/^\d{1,2}:\d{2}$/.test(str)) {
-    return str.length === 4 ? '0' + str : str;
-  }
-  try {
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) {
-      return new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'Asia/Bangkok',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(d);
-    }
-  } catch {
-    // fallback
-  }
-  return str;
-}
-
-// Initial corporate training seed fallback
-const INITIAL_DEMO_EVENTS: TrainingEvent[] = [
+// Initial corporate training seed fallback - preserved 100%
+export const INITIAL_COURSES: TrainingEvent[] = [
   {
     id: 'EVT-1001',
     category: 'Soft Skill Training',
@@ -195,8 +134,196 @@ const INITIAL_DEMO_EVENTS: TrainingEvent[] = [
   },
 ];
 
-// Demo attendees data for register sheets (Initialized empty to ensure only real Google Sheets data is used)
-const INITIAL_DEMO_ATTENDEES: Record<string, AttendeeRow[]> = {};
+// Initial official holidays list (19 official holidays in 2026) - preserved 100%
+export const INITIAL_HOLIDAYS: HolidayItem[] = [
+  { id: 'HOL-2026-01-01', date: '2026-01-01', name: 'วันขึ้นปีใหม่', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-03-03', date: '2026-03-03', name: 'วันมาฆบูชา', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-04-06', date: '2026-04-06', name: 'วันจักรี', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-04-13', date: '2026-04-13', name: 'วันสงกรานต์', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-04-14', date: '2026-04-14', name: 'วันสงกรานต์', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-04-15', date: '2026-04-15', name: 'วันสงกรานต์', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-05-01', date: '2026-05-01', name: 'วันแรงงานแห่งชาติ', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-05-04', date: '2026-05-04', name: 'วันฉัตรมงคล', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-05-31', date: '2026-05-31', name: 'วันวิสาขบูชา', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-06-03', date: '2026-06-03', name: 'วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าฯ พระบรมราชินี', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-07-28', date: '2026-07-28', name: 'วันเฉลิมพระชนมพรรษาพระบาทสมเด็จพระวชิรเกล้าเจ้าอยู่หัว', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-07-29', date: '2026-07-29', name: 'วันอาสาฬหบูชา', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-07-30', date: '2026-07-30', name: 'วันเข้าพรรษา', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-08-12', date: '2026-08-12', name: 'วันแม่แห่งชาติ', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-10-13', date: '2026-10-13', name: 'วันนวมินทรมหาราช', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-10-23', date: '2026-10-23', name: 'วันปิยมหาราช', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-12-05', date: '2026-12-05', name: 'วันพ่อแห่งชาติ / วันชาติ', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-12-10', date: '2026-12-10', name: 'วันรัฐธรรมนูญ', category: 'วันหยุดนักขัตฤกษ์' },
+  { id: 'HOL-2026-12-31', date: '2026-12-31', name: 'วันสิ้นปี', category: 'วันหยุดนักขัตฤกษ์' },
+];
+
+// Initial attendees for Register-1 - preserved 100%
+export const INITIAL_REGISTER_1_ATTENDEES: AttendeeRow[] = [
+  {
+    id: 'ATT-9579',
+    code: '9579',
+    sex: 'Mr.',
+    fname: 'Promrin',
+    lname: 'Srisang',
+    dept: 'ENG / PTE',
+    pos: 'Chief Technician',
+    exp: '23456',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 5,
+  },
+  {
+    id: 'ATT-12894',
+    code: '12894',
+    sex: 'Mr.',
+    fname: 'Saravut',
+    lname: 'Vohra',
+    dept: 'ENG / PTE',
+    pos: 'Sr.Technician',
+    exp: '2345623456',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 6,
+  },
+  {
+    id: 'ATT-15110',
+    code: '15110',
+    sex: 'Mr.',
+    fname: 'Wongsathon',
+    lname: 'Purisang',
+    dept: 'ENG / PTE',
+    pos: 'Technician 1',
+    exp: '23456',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 7,
+  },
+  {
+    id: 'ATT-9544',
+    code: '9544',
+    sex: 'Ms.',
+    fname: 'Jampa',
+    lname: 'Kamsri',
+    dept: 'PRD/TS1',
+    pos: 'Asst. General Manager',
+    exp: '-',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 8,
+  },
+  {
+    id: 'ATT-10971',
+    code: '10971',
+    sex: 'Ms.',
+    fname: 'Aree',
+    lname: 'Kheawsa-Ad',
+    dept: 'PRD/TS1',
+    pos: 'Sr.Supervisor',
+    exp: '2345623456',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 9,
+  },
+  {
+    id: 'ATT-12199',
+    code: '12199',
+    sex: 'Mrs.',
+    fname: 'Jansod',
+    lname: 'Kongsompong',
+    dept: 'PRD/TS1',
+    pos: 'Sr.Leader',
+    exp: '23456',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 10,
+  },
+  {
+    id: 'ATT-13803',
+    code: '13803',
+    sex: 'Ms.',
+    fname: 'Chatsuda',
+    lname: 'Chara',
+    dept: 'PRD/TS1',
+    pos: 'Leader 2',
+    exp: '23456',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 11,
+  },
+  {
+    id: 'ATT-15268',
+    code: '15268',
+    sex: 'Ms.',
+    fname: 'Manthana',
+    lname: 'Thanataranan',
+    dept: 'BM / PGM-E',
+    pos: 'PGM1',
+    exp: '23456',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 12,
+  },
+  {
+    id: 'ATT-15348',
+    code: '15348',
+    sex: 'Ms.',
+    fname: 'Navarat',
+    lname: 'Korad',
+    dept: 'BM / PGM-E',
+    pos: 'PGMT',
+    exp: '-',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 13,
+  },
+  {
+    id: 'ATT-8252',
+    code: '8252',
+    sex: 'Ms.',
+    fname: 'Sontaya',
+    lname: 'Karnpakdee',
+    dept: 'PRD/INJ',
+    pos: 'Sub.Leader 2',
+    exp: '-',
+    app: 's',
+    rem: 's',
+    submitterName: 'rediotyrt',
+    submitterDept: 'zer5u',
+    submitterPhone: 'aeutdoup',
+    rowIndex: 14,
+  },
+];
+
+/* =========================================================================
+   Local Storage Offline Cache
+   ========================================================================= */
 
 function getLocalEvents(): TrainingEvent[] {
   try {
@@ -205,7 +332,7 @@ function getLocalEvents(): TrainingEvent[] {
   } catch (e) {
     console.error('Error loading local events', e);
   }
-  return INITIAL_DEMO_EVENTS;
+  return INITIAL_COURSES;
 }
 
 function saveLocalEvents(events: TrainingEvent[]) {
@@ -216,6 +343,24 @@ function saveLocalEvents(events: TrainingEvent[]) {
   }
 }
 
+function getLocalHolidays(): HolidayItem[] {
+  try {
+    const saved = localStorage.getItem('training_holidays');
+    if (saved) return JSON.parse(saved);
+  } catch (e) {
+    console.error('Error loading local holidays', e);
+  }
+  return INITIAL_HOLIDAYS;
+}
+
+function saveLocalHolidays(holidays: HolidayItem[]) {
+  try {
+    localStorage.setItem('training_holidays', JSON.stringify(holidays));
+  } catch (e) {
+    console.error('Error saving local holidays', e);
+  }
+}
+
 function getLocalAttendees(sheetName: string): AttendeeRow[] {
   try {
     const saved = localStorage.getItem(`training_attendees_${sheetName}`);
@@ -223,7 +368,8 @@ function getLocalAttendees(sheetName: string): AttendeeRow[] {
   } catch (e) {
     console.error('Error loading local attendees', e);
   }
-  return INITIAL_DEMO_ATTENDEES[sheetName] || [];
+  if (sheetName === 'Register-1') return INITIAL_REGISTER_1_ATTENDEES;
+  return [];
 }
 
 function saveLocalAttendees(sheetName: string, attendees: AttendeeRow[]) {
@@ -234,176 +380,62 @@ function saveLocalAttendees(sheetName: string, attendees: AttendeeRow[]) {
   }
 }
 
-// In-memory cache for Web App URL
-let inMemoryWebAppUrl = '';
+/* =========================================================================
+   Firebase Cloud Firestore Automatic Seeding & Initialization
+   ========================================================================= */
 
-// Google Apps Script Web App URL for 100% free anonymous updates
-export function getSheetsWebAppUrl(): string {
-  try {
-    if (inMemoryWebAppUrl) return inMemoryWebAppUrl;
-    const stored =
-      localStorage.getItem('training_sheets_webapp_url') ||
-      (import.meta.env.VITE_SHEETS_WEBAPP_URL as string) ||
-      '';
-    inMemoryWebAppUrl = stored.trim();
-    return inMemoryWebAppUrl;
-  } catch {
-    return inMemoryWebAppUrl || '';
-  }
-}
+let isSeedingInitiated = false;
 
-export async function setSheetsWebAppUrl(url: string): Promise<void> {
-  const cleanUrl = url.trim();
-  inMemoryWebAppUrl = cleanUrl;
-  try {
-    localStorage.setItem('training_sheets_webapp_url', cleanUrl);
-  } catch (e) {
-    console.error(e);
-  }
+export async function ensureInitialDataSeeded(): Promise<void> {
+  if (isSeedingInitiated) return;
+  isSeedingInitiated = true;
 
-  // Persist to Cloud Firestore settings so all users, visitors, and devices share the sync URL!
   try {
-    await setDoc(
-      doc(db, 'settings', 'sheets_config'),
-      {
-        webAppUrl: cleanUrl,
-        spreadsheetId: SPREADSHEET_ID,
-        updatedAt: new Date().toISOString(),
-      },
-      { merge: true }
-    );
-  } catch (err) {
-    console.warn('Could not save webAppUrl to Firestore:', err);
-  }
-}
-
-/**
- * Initializes and syncs the Google Apps Script Web App configuration from Cloud Firestore
- */
-export async function initSheetsConfig(): Promise<string> {
-  try {
-    const configSnap = await getDoc(doc(db, 'settings', 'sheets_config'));
-    if (configSnap.exists()) {
-      const data = configSnap.data();
-      if (data?.webAppUrl) {
-        const url = String(data.webAppUrl).trim();
-        inMemoryWebAppUrl = url;
-        localStorage.setItem('training_sheets_webapp_url', url);
-        return url;
+    // 1. Check & Seed Events
+    const eventsSnap = await getDocs(collection(db, 'events'));
+    if (eventsSnap.empty) {
+      console.log('Seeding initial training courses into Firebase Firestore...');
+      for (const ev of INITIAL_COURSES) {
+        await setDoc(doc(db, 'events', ev.id), {
+          ...ev,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
       }
     }
+
+    // 2. Check & Seed Holidays
+    const holidaysSnap = await getDocs(collection(db, 'holidays'));
+    if (holidaysSnap.empty) {
+      console.log('Seeding initial annual holidays into Firebase Firestore...');
+      for (const h of INITIAL_HOLIDAYS) {
+        const hId = h.id || `HOL-${h.date}`;
+        await setDoc(doc(db, 'holidays', hId), {
+          ...h,
+          id: hId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    // 3. Check & Seed Register-1 Attendees
+    const reg1Doc = await getDoc(doc(db, 'form_attendees', 'Register-1'));
+    if (!reg1Doc.exists()) {
+      console.log('Seeding initial Register-1 attendees into Firebase Firestore...');
+      await setDoc(doc(db, 'form_attendees', 'Register-1'), {
+        attendees: INITIAL_REGISTER_1_ATTENDEES,
+        updatedAt: new Date().toISOString(),
+      });
+    }
   } catch (err) {
-    console.warn('Firestore sheets_config load warning:', err);
-  }
-  return getSheetsWebAppUrl();
-}
-
-export interface PendingSyncItem {
-  id: string;
-  type: 'save_event' | 'delete_event' | 'registration' | 'clear_sheet' | 'delete_attendees';
-  payload: any;
-  timestamp: number;
-}
-
-export function getPendingSyncQueue(): PendingSyncItem[] {
-  try {
-    const raw = localStorage.getItem('training_pending_sync_queue');
-    if (raw) return JSON.parse(raw);
-  } catch (e) {
-    console.error(e);
-  }
-  return [];
-}
-
-export function addPendingSyncItem(item: Omit<PendingSyncItem, 'id' | 'timestamp'>): void {
-  try {
-    const list = getPendingSyncQueue();
-    list.push({
-      ...item,
-      id: 'PEND-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-      timestamp: Date.now(),
-    });
-    localStorage.setItem('training_pending_sync_queue', JSON.stringify(list));
-  } catch (e) {
-    console.error(e);
+    console.warn('Initial Firebase seeding check warning:', err);
   }
 }
 
-export function clearPendingSyncQueue(): void {
-  try {
-    localStorage.removeItem('training_pending_sync_queue');
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-export async function sendToSheetsWebApp(
-  action: string,
-  payload: any
-): Promise<{ success: boolean; error?: string }> {
-  const url = getSheetsWebAppUrl();
-  if (!url) {
-    console.warn(`[Sheets Auto-Sync] Cannot send "${action}": Web App URL is not set.`);
-    return {
-      success: false,
-      error: 'ยังไม่ได้ระบุ Google Apps Script Web App URL สำหรับซิงค์ข้อมูลลง Google Sheets',
-    };
-  }
-
-  try {
-    const bodyStr = JSON.stringify({
-      action,
-      ...payload,
-      spreadsheetId: SPREADSHEET_ID,
-      timestamp: new Date().toISOString(),
-    });
-
-    // Use Content-Type: text/plain to avoid CORS preflight (OPTIONS) which Apps Script does not support
-    await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: bodyStr,
-      mode: 'no-cors',
-    });
-
-    console.log(`[Sheets Auto-Sync] Successfully dispatched "${action}" to Google Sheets Web App.`);
-    return { success: true };
-  } catch (err: unknown) {
-    console.error(`[Sheets Auto-Sync] Error dispatching "${action}":`, err);
-    return { success: false, error: (err as Error).message };
-  }
-}
-
-/**
- * Test connectivity to Google Apps Script Web App
- */
-export async function testSheetsWebApp(
-  testUrl?: string
-): Promise<{ success: boolean; message: string }> {
-  const targetUrl = testUrl ? testUrl.trim() : getSheetsWebAppUrl();
-  if (!targetUrl) {
-    return { success: false, message: 'กรุณาระบุ Web App URL ก่อนกดทดสอบ' };
-  }
-  try {
-    await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
-      body: JSON.stringify({
-        action: 'test',
-        spreadsheetId: SPREADSHEET_ID,
-        timestamp: new Date().toISOString(),
-      }),
-      mode: 'no-cors',
-    });
-    return { success: true, message: 'ส่งสัญญาณทดสอบไปยัง Google Apps Script สำเร็จ' };
-  } catch (err: unknown) {
-    return { success: false, message: (err as Error).message };
-  }
-}
+/* =========================================================================
+   Training Events Operations (Firebase)
+   ========================================================================= */
 
 // Check and close courses past close registration date
 export function checkAndCloseExpiredCourses(events: TrainingEvent[]): TrainingEvent[] {
@@ -423,245 +455,64 @@ export function checkAndCloseExpiredCourses(events: TrainingEvent[]): TrainingEv
 }
 
 /**
- * Dynamic JSONP / Fetch loader for public Google Sheets GViz endpoint.
- * Allows ALL visitors to read real-time data from spreadsheet 1gqp55Bp-HyDihtbHQGpyeVglHAXCQwXTxnefK8xVozs
- * without needing Google login or OAuth credentials.
- * Supports optional `range` (e.g. "A5:M500") and headers=0 to strictly query starting from Row 5.
+ * Fetch all courses and annual holidays from Firebase Firestore
  */
-export async function fetchSheetGvizData(sheetName: string, range?: string): Promise<any> {
-  const rangeQuery = range ? `&range=${encodeURIComponent(range)}&headers=0` : '';
-
-  if (typeof window !== 'undefined' && typeof document !== 'undefined') {
-    return new Promise((resolve, reject) => {
-      const callbackName = 'gviz_cb_' + Math.random().toString(36).substring(2, 9);
-      let resolved = false;
-
-      const timer = setTimeout(() => {
-        cleanup();
-        reject(new Error(`Timeout fetching ${sheetName} from Google Sheets`));
-      }, 12000);
-
-      function cleanup() {
-        clearTimeout(timer);
-        if (script && script.parentNode) {
-          script.parentNode.removeChild(script);
-        }
-        delete (window as any)[callbackName];
-      }
-
-      (window as any)[callbackName] = (data: any) => {
-        if (resolved) return;
-        resolved = true;
-        cleanup();
-        resolve(data);
-      };
-
-      const script = document.createElement('script');
-      script.src = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=responseHandler:${callbackName}&sheet=${encodeURIComponent(
-        sheetName
-      )}${rangeQuery}&t=${Date.now()}`;
-      script.onerror = (err) => {
-        if (resolved) return;
-        resolved = true;
-        cleanup();
-        reject(err);
-      };
-
-      document.head.appendChild(script);
-    });
-  }
-
-  // Node.js fallback
-  const res = await fetch(
-    `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(
-      sheetName
-    )}${rangeQuery}&t=${Date.now()}`
-  );
-  const text = await res.text();
-  const jsonText = text.replace(/^[^{]*/, '').replace(/[^}]*$/, '');
-  return JSON.parse(jsonText);
-}
-
-export function parseGvizDate(cell: any): string {
-  if (!cell) return '';
-  if (cell.f && /^\d{4}-\d{2}-\d{2}$/.test(cell.f)) {
-    return cell.f;
-  }
-  if (typeof cell.v === 'string') {
-    const match = cell.v.match(/Date\((\d+),(\d+),(\d+)/);
-    if (match) {
-      const year = match[1];
-      const month = String(Number(match[2]) + 1).padStart(2, '0');
-      const day = String(Number(match[3])).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(cell.v)) {
-      return cell.v;
-    }
-  }
-  return parseIsoDateToBangkok(cell.f || cell.v);
-}
-
-export function parseGvizTime(cell: any): string {
-  if (!cell) return '';
-  const raw = cell.f || (typeof cell.v === 'string' ? cell.v : '');
-  if (raw) {
-    const match = raw.match(/Date\(\d+,\d+,\d+,(\d+),(\d+)/);
-    if (match) {
-      return `${match[1].padStart(2, '0')}:${match[2].padStart(2, '0')}`;
-    }
-    const parts = raw.trim().split(':');
-    if (parts.length >= 2) {
-      return `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
-    }
-  }
-  return parseIsoTimeToBangkok(cell.f || cell.v);
-}
-
-/**
- * 1. Fetch Events from Google Sheets (Real-time public GViz + OAuth API v4 fallback)
- */
-export async function getEventsFromSheet(accessToken?: string | null): Promise<{
+export async function getEventsFromSheet(): Promise<{
   events: TrainingEvent[];
-  source: 'google-sheets' | 'local-cache';
+  source: string;
   error?: string;
 }> {
-  let masterEvents: TrainingEvent[] = [];
-  let holidayEvents: TrainingEvent[] = [];
-  let source: 'google-sheets' | 'local-cache' = 'local-cache';
+  await ensureInitialDataSeeded();
+
+  const courseList: TrainingEvent[] = [];
+  const holidayEvents: TrainingEvent[] = [];
+  let source = 'firebase';
   let fetchError: string | undefined;
 
-  // A. Fetch from Google Sheets API v4 if accessToken is available
-  if (accessToken) {
-    try {
-      const masterUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Master!A2:N100`;
-      const resMaster = await fetch(masterUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (resMaster.ok) {
-        const masterData = await resMaster.json();
-        const rows = masterData.values || [];
-
-        for (const row of rows) {
-          const eventId = row[0];
-          const title = row[2];
-          if (!eventId || !title) continue;
-
-          const category = row[1] || 'Other';
-          const startDate = parseIsoDateToBangkok(row[3]);
-          const endDate = parseIsoDateToBangkok(row[4]) || startDate;
-          const startTime = parseIsoTimeToBangkok(row[5]);
-          const endTime = parseIsoTimeToBangkok(row[6]);
-          const location = row[7] || '';
-          const description = row[8] || '';
-          const bgColor = row[9] || CATEGORY_COLORS[category as TrainingCategory] || '#EAEAEA';
-          const status = row[10] || 'ไม่ต้องลงทะเบียน';
-          const openDate = parseIsoDateToBangkok(row[11]);
-          const closeDate = parseIsoDateToBangkok(row[12]);
-          const formSheet = row[13] || '';
-
-          masterEvents.push({
-            id: eventId,
-            category,
-            title,
-            start: startDate,
-            end: endDate,
-            startTime,
-            endTime,
-            location,
-            description,
-            color: bgColor,
-            textColor: getContrastColor(bgColor),
-            status,
-            openDate,
-            closeDate,
-            formSheet,
-            isEvent: true,
-          });
-        }
-      }
-    } catch (e: unknown) {
-      console.warn('Sheets API v4 error, falling back to public GViz:', e);
-    }
-  }
-
-  // B. Public Google Sheets GViz endpoint: Always connect and fetch live data for all visitors
-  if (masterEvents.length === 0) {
-    try {
-      const gvizData = await fetchSheetGvizData('Master');
-      if (gvizData?.table?.rows) {
-        for (const row of gvizData.table.rows) {
-          const c = row.c || [];
-          const eventId = c[0]?.v ? String(c[0].v).trim() : '';
-          const title = c[2]?.v ? String(c[2].v).trim() : '';
-          if (!eventId || !title) continue;
-
-          const category = (c[1]?.v ? String(c[1].v).trim() : '') || 'Other';
-          const startDate = parseGvizDate(c[3]);
-          const endDate = parseGvizDate(c[4]) || startDate;
-          const startTime = parseGvizTime(c[5]);
-          const endTime = parseGvizTime(c[6]);
-          const location = c[7]?.v ? String(c[7].v).trim() : '';
-          const description = c[8]?.v ? String(c[8].v).trim() : '';
-          const bgColor =
-            (c[9]?.v ? String(c[9].v).trim() : '') ||
-            CATEGORY_COLORS[category as TrainingCategory] ||
-            '#EAEAEA';
-          const status = (c[10]?.v ? String(c[10].v).trim() : '') || 'ไม่ต้องลงทะเบียน';
-          const openDate = parseGvizDate(c[11]);
-          const closeDate = parseGvizDate(c[12]);
-          const formSheet = c[13]?.v ? String(c[13].v).trim() : '';
-
-          masterEvents.push({
-            id: eventId,
-            category,
-            title,
-            start: startDate,
-            end: endDate,
-            startTime,
-            endTime,
-            location,
-            description,
-            color: bgColor,
-            textColor: getContrastColor(bgColor),
-            status,
-            openDate,
-            closeDate,
-            formSheet,
-            isEvent: true,
-          });
-        }
-
-        if (masterEvents.length > 0) {
-          source = 'google-sheets';
-        }
-      }
-    } catch (err: unknown) {
-      console.warn('Public Google Sheets GViz fetch error:', err);
-      fetchError = (err as Error).message;
-    }
-  }
-
-  // C. Fetch real holidays from the Holiday sheet in Google Sheets!
   try {
-    const holidayData = await fetchSheetGvizData('Holiday');
-    if (holidayData?.table?.rows) {
-      holidayData.table.rows.forEach((r: any, idx: number) => {
-        const c = r.c || [];
-        const hDate = parseGvizDate(c[0]);
-        const hTitle = c[1]?.v ? String(c[1].v).trim() : '';
-        if (hDate && hTitle) {
+    // 1. Load Courses from Firestore
+    const eventSnap = await getDocs(collection(db, 'events'));
+    if (!eventSnap.empty) {
+      eventSnap.forEach((d) => {
+        const data = d.data() as TrainingEvent;
+        if (data && data.title) {
+          courseList.push({
+            ...data,
+            id: d.id,
+            isEvent: true,
+            isHoliday: false,
+          });
+        }
+      });
+    } else {
+      courseList.push(...INITIAL_COURSES);
+    }
+  } catch (err: unknown) {
+    console.warn('Firebase events load error, using local cache:', err);
+    courseList.push(...getLocalEvents());
+    source = 'local-cache';
+    fetchError = (err as Error).message;
+  }
+
+  try {
+    // 2. Load Annual Holidays from Firestore
+    const holidaySnap = await getDocs(collection(db, 'holidays'));
+    if (!holidaySnap.empty) {
+      const holidaysList: HolidayItem[] = [];
+      holidaySnap.forEach((d) => {
+        const h = d.data() as HolidayItem;
+        if (h && h.date && h.name) {
+          holidaysList.push({ ...h, id: d.id });
           holidayEvents.push({
-            id: `HOL-${idx}`,
+            id: d.id || `HOL-${h.date}`,
             category: 'Other',
-            title: hTitle,
-            start: hDate,
-            end: hDate,
+            title: h.name,
+            start: h.date,
+            end: h.date,
             startTime: '',
             endTime: '',
             location: '',
-            description: 'วันหยุดบริษัท / วันหยุดนักขัตฤกษ์',
+            description: h.description || `${h.category || 'วันหยุดประจำปี'}`,
             color: 'transparent',
             textColor: '#ef4444',
             status: 'ไม่ต้องลงทะเบียน',
@@ -670,73 +521,63 @@ export async function getEventsFromSheet(accessToken?: string | null): Promise<{
           });
         }
       });
-    }
-  } catch (err) {
-    console.warn('Could not fetch Holiday sheet, using fallback list', err);
-  }
-
-  // Fallback to default official holidays list if Holiday sheet returned nothing
-  if (holidayEvents.length === 0) {
-    holidayEvents = OFFICIAL_HOLIDAYS.map((h, idx) => ({
-      id: `HOL-${idx}`,
-      category: 'Other',
-      title: h.title,
-      start: h.date,
-      end: h.date,
-      startTime: '',
-      endTime: '',
-      location: '',
-      description: 'วันหยุดนักขัตฤกษ์ / วันหยุดราชการ',
-      color: 'transparent',
-      textColor: '#ef4444',
-      status: 'ไม่ต้องลงทะเบียน',
-      isEvent: false,
-      isHoliday: true,
-    }));
-  }
-
-  // D. Merge real-time events from Firestore cloud database
-  try {
-    const snap = await getDocs(collection(db, 'events'));
-    if (!snap.empty) {
-      snap.forEach((d) => {
-        const evData = d.data() as TrainingEvent;
-        if (evData && evData.id && evData.title) {
-          const existingIdx = masterEvents.findIndex((e) => e.id === evData.id);
-          if (existingIdx !== -1) {
-            masterEvents[existingIdx] = evData;
-          } else {
-            masterEvents.push(evData);
-          }
-        }
+      saveLocalHolidays(holidaysList);
+    } else {
+      const fallbackHolidays = getLocalHolidays();
+      fallbackHolidays.forEach((h, idx) => {
+        holidayEvents.push({
+          id: h.id || `HOL-${idx}`,
+          category: 'Other',
+          title: h.name,
+          start: h.date,
+          end: h.date,
+          startTime: '',
+          endTime: '',
+          location: '',
+          description: h.category || 'วันหยุดนักขัตฤกษ์ / วันหยุดราชการ',
+          color: 'transparent',
+          textColor: '#ef4444',
+          status: 'ไม่ต้องลงทะเบียน',
+          isEvent: false,
+          isHoliday: true,
+        });
       });
-      source = 'google-sheets';
     }
-  } catch (err) {
-    console.warn('Firestore events load warning:', err);
+  } catch (err: unknown) {
+    console.warn('Firebase holidays load error, using fallback:', err);
+    const fallbackHolidays = getLocalHolidays();
+    fallbackHolidays.forEach((h, idx) => {
+      holidayEvents.push({
+        id: h.id || `HOL-${idx}`,
+        category: 'Other',
+        title: h.name,
+        start: h.date,
+        end: h.date,
+        startTime: '',
+        endTime: '',
+        location: '',
+        description: h.category || 'วันหยุดประจำปี',
+        color: 'transparent',
+        textColor: '#ef4444',
+        status: 'ไม่ต้องลงทะเบียน',
+        isEvent: false,
+        isHoliday: true,
+      });
+    });
   }
 
-  // Fallback to local cache only if Google Sheets & Firestore were completely unreachable
-  if (masterEvents.length === 0) {
-    masterEvents = getLocalEvents().filter((e) => e.isEvent);
-    source = 'local-cache';
-  } else {
-    source = 'google-sheets';
-  }
-
-  const combined = [...masterEvents, ...holidayEvents];
+  const combined = [...courseList, ...holidayEvents];
   const finalEvents = checkAndCloseExpiredCourses(combined);
-
-  // Cache locally
   saveLocalEvents(finalEvents);
 
   return { events: finalEvents, source, error: fetchError };
 }
 
-// 2. Save Event (Add or Update)
+/**
+ * Save (create or update) a training course in Firebase
+ */
 export async function saveEventToSheet(
-  eventPayload: Partial<TrainingEvent> & { title: string; start: string },
-  accessToken?: string | null
+  eventPayload: Partial<TrainingEvent> & { title: string; start: string }
 ): Promise<{ success: boolean; event: TrainingEvent; error?: string }> {
   const localEvents = getLocalEvents();
   let rowId = eventPayload.id;
@@ -766,6 +607,7 @@ export async function saveEventToSheet(
     closeDate: eventPayload.closeDate || '',
     formSheet: eventPayload.formSheet || '',
     isEvent: true,
+    isHoliday: false,
   };
 
   // Update local cache
@@ -781,172 +623,196 @@ export async function saveEventToSheet(
   }
   saveLocalEvents(localEvents);
 
-  // 1. Send to Google Apps Script Web App if configured (zero-login public sync)
-  sendToSheetsWebApp('save_event', { event: newEvent });
-
-  // 2. Real-time persistent cloud sync via Firestore (Zero-login for all users!)
+  // Write directly to Cloud Firestore
   try {
     const eventRef = doc(db, 'events', newEvent.id);
-    await setDoc(eventRef, newEvent, { merge: true });
-  } catch (err) {
-    console.warn('Firestore event write error:', err);
-  }
-
-  if (!accessToken) {
-    // Queue pending change so it automatically pushes to Google Sheets when Admin connects
-    addPendingSyncItem({ type: 'save_event', payload: newEvent });
-    return { success: true, event: newEvent };
-  }
-
-  // Sync to Google Sheets if access token available
-  try {
-    const rowValues = [
-      newEvent.id,
-      newEvent.category,
-      newEvent.title,
-      newEvent.start,
-      newEvent.end,
-      newEvent.startTime,
-      newEvent.endTime,
-      newEvent.location,
-      newEvent.description,
-      newEvent.color,
-      newEvent.status,
-      newEvent.openDate,
-      newEvent.closeDate,
-      newEvent.formSheet,
-    ];
-
-    const masterUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Master!A:A`;
-    const checkRes = await fetch(masterUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    let targetRowIndex = -1;
-    if (checkRes.ok) {
-      const data = await checkRes.json();
-      const colA = data.values || [];
-      for (let i = 1; i < colA.length; i++) {
-        if (colA[i][0] === rowId) {
-          targetRowIndex = i + 1; // 1-indexed
-          break;
-        }
-      }
-    }
-
-    if (targetRowIndex > 0) {
-      const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Master!A${targetRowIndex}:N${targetRowIndex}?valueInputOption=USER_ENTERED`;
-      await fetch(updateUrl, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ values: [rowValues] }),
-      });
-    } else {
-      const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Master!A:N:append?valueInputOption=USER_ENTERED`;
-      await fetch(appendUrl, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ values: [rowValues] }),
-      });
-    }
-
+    await setDoc(
+      eventRef,
+      {
+        ...newEvent,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
     return { success: true, event: newEvent };
   } catch (err: unknown) {
-    console.error('Save to sheet error:', err);
-    addPendingSyncItem({ type: 'save_event', payload: newEvent });
+    console.error('Firebase save event error:', err);
     return { success: true, event: newEvent, error: (err as Error).message };
   }
 }
 
-// 3. Delete Event
+/**
+ * Delete a course from Firebase
+ */
 export async function deleteEventFromSheet(
-  eventId: string,
-  accessToken?: string | null
+  eventId: string
 ): Promise<{ success: boolean; error?: string }> {
   const localEvents = getLocalEvents().filter((e) => e.id !== eventId);
   saveLocalEvents(localEvents);
 
-  // Send to Google Apps Script Web App if configured
-  sendToSheetsWebApp('delete_event', { eventId });
-
-  // Persistent cloud sync via Firestore (Zero-login for all users!)
   try {
     const eventRef = doc(db, 'events', eventId);
     await deleteDoc(eventRef);
-  } catch (err) {
-    console.warn('Firestore event delete error:', err);
-  }
-
-  if (!accessToken) {
-    addPendingSyncItem({ type: 'delete_event', payload: { eventId } });
-    return { success: true };
-  }
-
-  try {
-    const masterUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Master!A:A`;
-    const checkRes = await fetch(masterUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    if (checkRes.ok) {
-      const data = await checkRes.json();
-      const colA = data.values || [];
-      for (let i = 1; i < colA.length; i++) {
-        if (colA[i][0] === eventId) {
-          const rowNumber = i + 1;
-          const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/Master!A${rowNumber}:N${rowNumber}:clear`;
-          await fetch(clearUrl, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${accessToken}` },
-          });
-          break;
-        }
-      }
-    }
     return { success: true };
   } catch (err: unknown) {
-    console.error('Delete from sheet error:', err);
-    addPendingSyncItem({ type: 'delete_event', payload: { eventId } });
+    console.error('Firebase delete event error:', err);
     return { success: false, error: (err as Error).message };
   }
 }
 
-// 4. Submit Registration
+/* =========================================================================
+   Annual Holiday Operations (Firebase - for Admin Holiday Management)
+   ========================================================================= */
+
+/**
+ * Get list of all annual holidays from Firebase
+ */
+export async function getAnnualHolidays(): Promise<HolidayItem[]> {
+  await ensureInitialDataSeeded();
+  try {
+    const snap = await getDocs(collection(db, 'holidays'));
+    if (!snap.empty) {
+      const list: HolidayItem[] = [];
+      snap.forEach((d) => {
+        const item = d.data() as HolidayItem;
+        list.push({ ...item, id: d.id });
+      });
+      list.sort((a, b) => a.date.localeCompare(b.date));
+      saveLocalHolidays(list);
+      return list;
+    }
+  } catch (err) {
+    console.warn('Error fetching annual holidays from Firebase:', err);
+  }
+  return getLocalHolidays();
+}
+
+/**
+ * Save (create or update) an annual holiday in Firebase
+ */
+export async function saveAnnualHoliday(
+  holiday: Partial<HolidayItem> & { date: string; name: string }
+): Promise<{ success: boolean; holiday: HolidayItem; error?: string }> {
+  let id = holiday.id;
+  if (!id) {
+    id = `HOL-${holiday.date}-${Date.now().toString().slice(-4)}`;
+  }
+
+  const cleanHoliday: HolidayItem = {
+    id,
+    date: holiday.date.trim(),
+    name: holiday.name.trim(),
+    category: holiday.category || 'วันหยุดนักขัตฤกษ์',
+    description: holiday.description || '',
+  };
+
+  // Update local cache
+  const local = getLocalHolidays();
+  const existingIdx = local.findIndex((h) => h.id === id || h.date === cleanHoliday.date);
+  if (existingIdx !== -1) {
+    local[existingIdx] = cleanHoliday;
+  } else {
+    local.push(cleanHoliday);
+  }
+  local.sort((a, b) => a.date.localeCompare(b.date));
+  saveLocalHolidays(local);
+
+  // Write to Firebase Firestore
+  try {
+    await setDoc(doc(db, 'holidays', id), {
+      ...cleanHoliday,
+      updatedAt: new Date().toISOString(),
+    });
+    return { success: true, holiday: cleanHoliday };
+  } catch (err: unknown) {
+    console.error('Firebase save holiday error:', err);
+    return { success: false, holiday: cleanHoliday, error: (err as Error).message };
+  }
+}
+
+/**
+ * Delete an annual holiday from Firebase
+ */
+export async function deleteAnnualHoliday(
+  holidayId: string
+): Promise<{ success: boolean; error?: string }> {
+  const local = getLocalHolidays().filter((h) => h.id !== holidayId);
+  saveLocalHolidays(local);
+
+  try {
+    await deleteDoc(doc(db, 'holidays', holidayId));
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('Firebase delete holiday error:', err);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/* =========================================================================
+   Registration & Attendee Operations (Pure Firebase - Collaborative)
+   ========================================================================= */
+
+/**
+ * Fetch registration attendees for a form sheet / course
+ */
+export async function getRegistrationAttendees(
+  sheetName: string
+): Promise<{ attendees: AttendeeRow[]; error?: string }> {
+  await ensureInitialDataSeeded();
+
+  try {
+    const sheetDoc = await getDoc(doc(db, 'form_attendees', sheetName));
+    if (sheetDoc.exists()) {
+      const data = sheetDoc.data();
+      if (Array.isArray(data?.attendees)) {
+        saveLocalAttendees(sheetName, data.attendees);
+        return { attendees: data.attendees };
+      }
+    }
+  } catch (err: unknown) {
+    console.warn(`Firestore form_attendees [${sheetName}] fetch error:`, err);
+  }
+
+  return { attendees: getLocalAttendees(sheetName) };
+}
+
+/**
+ * Submit registration data to Firebase Firestore (Instant multi-device collaborative sync)
+ */
 export async function submitRegistrationData(
-  payload: RegistrationPayload,
-  accessToken?: string | null
+  payload: RegistrationPayload
 ): Promise<{ success: boolean; insertedIndices: number[]; error?: string }> {
-  const { formSheet, data, submitterName, submitterDept, submitterPhone, isEditMode, rowIndices } = payload;
+  const { formSheet, data, submitterName, submitterDept, submitterPhone, isEditMode, rowIndices } =
+    payload;
 
   const currentAttendees = getLocalAttendees(formSheet);
   const newInsertedIndices: number[] = [];
+  const timestamp = new Date().toISOString();
 
   const formattedRows: AttendeeRow[] = data.map((d, index) => {
-    const existingIndex = rowIndices && rowIndices[index] ? rowIndices[index] : 5 + currentAttendees.length + index;
+    const existingIndex =
+      rowIndices && rowIndices[index] ? rowIndices[index] : 5 + currentAttendees.length + index;
     newInsertedIndices.push(existingIndex);
     return {
-      code: d[0],
+      id: 'ATT-' + Date.now() + '-' + index,
+      code: d[0] || '',
       sex: (d[1] as 'Mr.' | 'Ms.' | 'Mrs.') || 'Mr.',
-      fname: d[2],
-      lname: d[3],
-      dept: d[4],
-      pos: d[5],
-      exp: d[6],
-      app: d[7],
+      fname: d[2] || '',
+      lname: d[3] || '',
+      dept: d[4] || '',
+      pos: d[5] || '',
+      exp: d[6] || '',
+      app: d[7] || '',
       rem: d[8] || '',
       submitterName,
       submitterDept,
       submitterPhone,
       rowIndex: existingIndex,
+      createdAt: timestamp,
     };
   });
 
+  let updatedAttendees: AttendeeRow[];
   if (isEditMode && rowIndices && rowIndices.length > 0) {
     const updated = [...currentAttendees];
     formattedRows.forEach((newRow) => {
@@ -957,306 +823,50 @@ export async function submitRegistrationData(
         updated.push(newRow);
       }
     });
-    saveLocalAttendees(formSheet, updated);
+    updatedAttendees = updated;
   } else {
-    saveLocalAttendees(formSheet, [...currentAttendees, ...formattedRows]);
+    updatedAttendees = [...currentAttendees, ...formattedRows];
   }
 
-  // Send to Web App endpoint if configured
-  sendToSheetsWebApp('registration', {
-    formSheet,
-    data,
-    submitterName,
-    submitterDept,
-    submitterPhone,
-    isEditMode,
-    rowIndices,
-  });
+  // Save to local cache
+  saveLocalAttendees(formSheet, updatedAttendees);
 
-  // Real-time persistent cloud sync via Firestore (Zero-login for all users!)
+  // Write directly into Cloud Firestore for instant real-time sync across all devices
   try {
     const sheetAttendeesRef = doc(db, 'form_attendees', formSheet);
-    const updatedAttendees = getLocalAttendees(formSheet);
-    await setDoc(sheetAttendeesRef, { attendees: updatedAttendees, updatedAt: new Date().toISOString() }, { merge: true });
-  } catch (err) {
-    console.warn('Firestore registration write error:', err);
-  }
-
-  if (!accessToken) {
-    // Queue pending change so it automatically pushes to Google Sheets when Admin connects
-    addPendingSyncItem({ type: 'registration', payload });
-    return { success: true, insertedIndices: newInsertedIndices };
-  }
-
-  try {
-    // Write to Google Sheets (Column A to M, starting at row 5)
-    const targetStartRow = 5 + currentAttendees.length;
-    const sheetRows = data.map((d, idx) => [
-      String(currentAttendees.length + idx + 1), // Col A: No.
-      d[0], // Col B: Code
-      d[1], // Col C: Sex
-      d[2], // Col D: Name
-      d[3], // Col E: LastName
-      d[4], // Col F: Dept
-      d[5], // Col G: Pos
-      d[6], // Col H: Exp
-      d[7], // Col I: App
-      d[8] || '', // Col J: Rem
-      submitterName,
-      submitterDept,
-      submitterPhone,
-    ]);
-
-    if (isEditMode && rowIndices && rowIndices.length > 0) {
-      for (let i = 0; i < sheetRows.length; i++) {
-        const targetRow = rowIndices[i] || 5;
-        const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${formSheet}!A${targetRow}:M${targetRow}?valueInputOption=USER_ENTERED`;
-        await fetch(updateUrl, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ values: [sheetRows[i]] }),
-        });
-      }
-    } else {
-      const targetEndRow = targetStartRow + sheetRows.length - 1;
-      const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${formSheet}!A${targetStartRow}:M${targetEndRow}?valueInputOption=USER_ENTERED`;
-      await fetch(updateUrl, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ values: sheetRows }),
-      });
-    }
+    await setDoc(
+      sheetAttendeesRef,
+      {
+        formSheet,
+        courseId: payload.courseId,
+        courseTitle: payload.courseTitle,
+        attendees: updatedAttendees,
+        totalCount: updatedAttendees.length,
+        updatedAt: timestamp,
+      },
+      { merge: true }
+    );
 
     return { success: true, insertedIndices: newInsertedIndices };
   } catch (err: unknown) {
-    console.error('Submit registration error:', err);
-    addPendingSyncItem({ type: 'registration', payload });
-    return { success: true, insertedIndices: newInsertedIndices, error: (err as Error).message };
+    console.error('Firebase submit registration error:', err);
+    return {
+      success: true,
+      insertedIndices: newInsertedIndices,
+      error: (err as Error).message,
+    };
   }
 }
 
 /**
- * Intelligent Attendee Row Parser:
- * Strictly parses real attendees starting from row 5 in Google Sheets.
- * Skips table headers, course name rows, dates, and non-attendee banners.
+ * Delete specific attendees from a registration form sheet in Firebase
  */
-export function parseAttendeeFromCells(c: any[], rowIndex: number): AttendeeRow | null {
-  if (!c || c.length === 0) return null;
-  // STRICT: Real attendees only exist from row 5 onwards!
-  if (rowIndex < 5) return null;
-
-  const rawVals = c.map((cell) => {
-    if (cell === null || cell === undefined) return '';
-    if (typeof cell === 'object' && cell !== null) {
-      return String(cell.f || cell.v || '').trim();
-    }
-    return String(cell).trim();
-  });
-
-  // 1. Skip completely empty rows
-  if (rawVals.every((v) => !v)) return null;
-
-  // 2. Skip table headers and descriptive banner rows (case-insensitive substring match)
-  const isHeader = rawVals.some((val) =>
-    /(Course Name|Training Registration|Training Date|Microsoft Teams|Via :|Trainer :|Title \/ Sex|First Name|Last-name|Dept\. \/ In-charge|Position|Expectation for Training|Apply for work|Remark|ผู้ประสานงาน|No\.|Code|Sex)/i.test(
-      val
-    )
-  );
-  if (isHeader) return null;
-
-  // 3. Code candidate in col 1 or col 0. Must not be a keyword, title, or label
-  const codeCandidate = (rawVals[1] || rawVals[0] || '').trim();
-  if (
-    !codeCandidate ||
-    codeCandidate.includes(':') ||
-    /(course|training|date|code|no\.|#|รหัส|คำนำหน้า|ลำดับ|survey|microsoft|teams|svi)/i.test(codeCandidate)
-  ) {
-    return null;
-  }
-
-  const sexRegex = /^(mr\.|ms\.|mrs\.|นาย|นาง|นางสาว|miss|master)$/i;
-
-  // 4. Detect column shift (as seen in Register-3 where Col 2 & 3 both have Sex/Title, shifting First Name to Col 4)
-  const isCol3Sex = sexRegex.test(rawVals[3]);
-  if (isCol3Sex && rawVals[4] && !sexRegex.test(rawVals[4])) {
-    const fname = rawVals[4].trim();
-    if (!fname || fname.includes(':') || /(course|training|name|date|survey|microsoft)/i.test(fname)) return null;
-
-    const hasRemarkCol = rawVals.length > 13 && rawVals[13];
-    return {
-      code: codeCandidate,
-      sex: (rawVals[3] || rawVals[2] || 'Mr.') as 'Mr.' | 'Ms.' | 'Mrs.',
-      fname,
-      lname: rawVals[5] || '',
-      dept: rawVals[6] || '',
-      pos: rawVals[7] || '',
-      exp: rawVals[8] || '',
-      app: rawVals[9] || '',
-      rem: hasRemarkCol ? rawVals[10] : '',
-      submitterName: hasRemarkCol ? rawVals[11] : rawVals[10] || '',
-      submitterDept: hasRemarkCol ? rawVals[12] : rawVals[11] || '',
-      submitterPhone: hasRemarkCol ? rawVals[13] : rawVals[12] || '',
-      rowIndex,
-    };
-  }
-
-  // Standard Register-1 layout:
-  // Col 1: Code | Col 2: Sex | Col 3: First Name | Col 4: Last Name | Col 5: Dept | Col 6: Position
-  const fname = (rawVals[3] || '').trim();
-  const lname = (rawVals[4] || '').trim();
-  if (!fname && !lname) return null;
-  if (fname.includes(':') || /(course|training|survey|registration|date|teams)/i.test(fname)) return null;
-
-  return {
-    code: codeCandidate,
-    sex: (sexRegex.test(rawVals[2]) ? rawVals[2] : 'Mr.') as 'Mr.' | 'Ms.' | 'Mrs.',
-    fname,
-    lname,
-    dept: rawVals[5] || '',
-    pos: rawVals[6] || '',
-    exp: rawVals[7] || '',
-    app: rawVals[8] || '',
-    rem: rawVals[9] || '',
-    submitterName: rawVals[10] || '',
-    submitterDept: rawVals[11] || '',
-    submitterPhone: rawVals[12] || '',
-    rowIndex,
-  };
-}
-
-// 5. Fetch Registration Attendees for a sheet
-export async function getRegistrationAttendees(
-  sheetName: string,
-  accessToken?: string | null
-): Promise<{ attendees: AttendeeRow[]; error?: string }> {
-  // If accessToken is available, try Sheets API v4 first starting strictly at Row 5
-  if (accessToken) {
-    try {
-      const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M500`;
-      const res = await fetch(url, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        const rows = data.values || [];
-        const attendees: AttendeeRow[] = [];
-
-        for (let i = 0; i < rows.length; i++) {
-          const parsed = parseAttendeeFromCells(rows[i], 5 + i);
-          if (parsed) {
-            attendees.push(parsed);
-          }
-        }
-
-        saveLocalAttendees(sheetName, attendees);
-        return { attendees };
-      }
-    } catch (err: unknown) {
-      console.warn('Sheets API v4 error for attendees, falling back to public GViz:', err);
-    }
-  }
-
-  // Public Google Sheets GViz fetch with range A5:M500 so all users see real-time attendees starting strictly at Row 5
-  try {
-    const gvizData = await fetchSheetGvizData(sheetName, 'A5:M500');
-    if (gvizData?.table) {
-      const gvizRows = gvizData.table.rows || [];
-      const attendees: AttendeeRow[] = [];
-      gvizRows.forEach((r: any, i: number) => {
-        const c = r.c || [];
-        const parsed = parseAttendeeFromCells(c, 5 + i);
-        if (parsed) {
-          attendees.push(parsed);
-        }
-      });
-
-      // Save real fetched attendees (even if empty, which is accurate when no one has registered)
-      saveLocalAttendees(sheetName, attendees);
-      return { attendees };
-    }
-  } catch (err: unknown) {
-    console.warn('Public GViz fetch error for attendees:', err);
-  }
-
-  // Check Firestore for real-time registered attendees
-  try {
-    const sheetDoc = await getDoc(doc(db, 'form_attendees', sheetName));
-    if (sheetDoc.exists()) {
-      const data = sheetDoc.data();
-      if (Array.isArray(data?.attendees)) {
-        saveLocalAttendees(sheetName, data.attendees);
-        return { attendees: data.attendees };
-      }
-    }
-  } catch (err) {
-    console.warn('Firestore form_attendees fetch warning:', err);
-  }
-
-  return { attendees: getLocalAttendees(sheetName) };
-}
-
-// 6. Clear Registration Data
-export async function clearRegistrationSheet(
-  sheetName: string,
-  accessToken?: string | null
-): Promise<{ success: boolean; error?: string }> {
-  saveLocalAttendees(sheetName, []);
-
-  const localEvents = getLocalEvents().map((e) => {
-    if (e.formSheet === sheetName) {
-      return { ...e, formSheet: '' };
-    }
-    return e;
-  });
-  saveLocalEvents(localEvents);
-
-  // Send to Web App endpoint (zero-login for all)
-  const webAppRes = await sendToSheetsWebApp('clear_sheet', { formSheet: sheetName });
-
-  // Clear in Firestore
-  try {
-    await setDoc(doc(db, 'form_attendees', sheetName), { attendees: [], clearedAt: new Date().toISOString() });
-  } catch (err) {
-    console.warn('Firestore clear error:', err);
-  }
-
-  if (!accessToken) {
-    if (!webAppRes.success) {
-      addPendingSyncItem({ type: 'clear_sheet' as any, payload: { formSheet: sheetName } });
-    }
-    return { success: true };
-  }
-
-  try {
-    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100:clear`;
-    await fetch(clearUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    return { success: true };
-  } catch (err: unknown) {
-    console.error('Error clearing registration sheet:', err);
-    return { success: false, error: (err as Error).message };
-  }
-}
-
-// 6b. Delete Specific Attendees from Registration Sheet
 export async function deleteRegistrationAttendees(
   sheetName: string,
-  attendeesToDelete: AttendeeRow[],
-  accessToken?: string | null
+  attendeesToDelete: AttendeeRow[]
 ): Promise<{ success: boolean; remainingCount: number; error?: string }> {
   const currentAttendees = getLocalAttendees(sheetName);
 
-  // Match by code, names, and rowIndex
   const deleteKeySet = new Set(
     attendeesToDelete.map(
       (a) => `${a.code || ''}|${a.fname || ''}|${a.lname || ''}|${a.rowIndex ?? ''}`
@@ -1283,190 +893,92 @@ export async function deleteRegistrationAttendees(
 
   saveLocalAttendees(sheetName, updatedRemaining);
 
-  // Send webhook sync to Apps Script (zero-login for all)
-  const webAppRes = await sendToSheetsWebApp('delete_attendees', {
-    formSheet: sheetName,
-    deleted: attendeesToDelete,
-    remaining: updatedRemaining,
-  });
-
-  // Persistent Firestore sync
+  // Write to Firebase Firestore
   try {
     const sheetAttendeesRef = doc(db, 'form_attendees', sheetName);
     await setDoc(
       sheetAttendeesRef,
       {
         attendees: updatedRemaining,
+        totalCount: updatedRemaining.length,
         updatedAt: new Date().toISOString(),
       },
       { merge: true }
     );
-  } catch (err) {
-    console.warn('Firestore delete attendees update warning:', err);
-  }
-
-  // If no accessToken, queue pending delete so it syncs when Admin connects
-  if (!accessToken) {
-    if (!webAppRes.success) {
-      addPendingSyncItem({
-        type: 'delete_attendees' as any,
-        payload: { formSheet: sheetName, attendeesToDelete },
-      });
-    }
     return { success: true, remainingCount: updatedRemaining.length };
-  }
-
-  // Direct sync to Google Sheets via OAuth token
-  try {
-    // 1. Clear old data range A5:M100
-    const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100:clear`;
-    await fetch(clearUrl, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-
-    // 2. Rewrite remaining attendees from Row 5 (Column A to M)
-    if (updatedRemaining.length > 0) {
-      const sheetRows = updatedRemaining.map((d, idx) => [
-        String(idx + 1), // Col A: No.
-        d.code || '',    // Col B: Code
-        d.sex || 'Mr.',  // Col C: Sex
-        d.fname || '',   // Col D: Name
-        d.lname || '',   // Col E: Last Name
-        d.dept || '',    // Col F: Dept
-        d.pos || '',     // Col G: Position
-        d.exp || '',     // Col H: Expectation
-        d.app || '',     // Col I: Apply
-        d.rem || '',     // Col J: Remark
-        d.submitterName || '',
-        d.submitterDept || '',
-        d.submitterPhone || '',
-      ]);
-
-      const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M${
-        4 + sheetRows.length
-      }?valueInputOption=USER_ENTERED`;
-      await fetch(writeUrl, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ values: sheetRows }),
-      });
-    }
-  } catch (err) {
-    console.error('Google Sheets delete API sync error:', err);
+  } catch (err: unknown) {
+    console.error('Firebase delete attendees error:', err);
     return { success: true, remainingCount: updatedRemaining.length, error: (err as Error).message };
   }
-
-  return { success: true, remainingCount: updatedRemaining.length };
 }
 
-// 6c. Force Push Entire Current Attendee List to Google Sheets
-export async function forcePushSheetToGoogleSheets(
+/**
+ * Clear all registration attendees for a form sheet in Firebase
+ */
+export async function clearRegistrationSheet(
+  sheetName: string
+): Promise<{ success: boolean; error?: string }> {
+  saveLocalAttendees(sheetName, []);
+
+  try {
+    const sheetAttendeesRef = doc(db, 'form_attendees', sheetName);
+    await setDoc(sheetAttendeesRef, {
+      attendees: [],
+      totalCount: 0,
+      clearedAt: new Date().toISOString(),
+    });
+    return { success: true };
+  } catch (err: unknown) {
+    console.error('Firebase clear sheet error:', err);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/**
+ * Add a single attendee directly (for Admin Dashboard quick-add)
+ */
+export async function addSingleAttendee(
   sheetName: string,
-  accessToken?: string | null
-): Promise<{ success: boolean; count: number; error?: string }> {
+  attendee: AttendeeRow
+): Promise<{ success: boolean; attendees: AttendeeRow[]; error?: string }> {
   const current = getLocalAttendees(sheetName);
-
-  // 1. Send via Google Apps Script Webhook
-  const webAppRes = await sendToSheetsWebApp('delete_attendees', {
-    formSheet: sheetName,
-    deleted: [],
-    remaining: current,
-  });
-
-  // 2. If OAuth accessToken available, also write via Google Sheets API v4
-  if (accessToken) {
-    try {
-      const clearUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M100:clear`;
-      await fetch(clearUrl, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (current.length > 0) {
-        const sheetRows = current.map((d, idx) => [
-          String(idx + 1),
-          d.code || '',
-          d.sex || 'Mr.',
-          d.fname || '',
-          d.lname || '',
-          d.dept || '',
-          d.pos || '',
-          d.exp || '',
-          d.app || '',
-          d.rem || '',
-          d.submitterName || '',
-          d.submitterDept || '',
-          d.submitterPhone || '',
-        ]);
-
-        const writeUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${sheetName}!A5:M${
-          4 + sheetRows.length
-        }?valueInputOption=USER_ENTERED`;
-        await fetch(writeUrl, {
-          method: 'PUT',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ values: sheetRows }),
-        });
-      }
-    } catch (e: unknown) {
-      console.warn('OAuth Sheets API push error:', e);
-    }
-  }
-
-  return {
-    success: webAppRes.success || Boolean(accessToken),
-    count: current.length,
-    error: webAppRes.error,
+  const newRow: AttendeeRow = {
+    ...attendee,
+    id: attendee.id || 'ATT-' + Date.now(),
+    rowIndex: 5 + current.length,
+    createdAt: new Date().toISOString(),
   };
+  const updated = [...current, newRow];
+  saveLocalAttendees(sheetName, updated);
+
+  try {
+    await setDoc(
+      doc(db, 'form_attendees', sheetName),
+      {
+        attendees: updated,
+        totalCount: updated.length,
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    return { success: true, attendees: updated };
+  } catch (err: unknown) {
+    return { success: true, attendees: updated, error: (err as Error).message };
+  }
 }
 
-// 7. Auto-Flush Pending Sync Queue
-export async function flushPendingSyncQueue(
-  accessToken?: string | null
-): Promise<{ flushedCount: number }> {
-  const queue = getPendingSyncQueue();
-  if (queue.length === 0) return { flushedCount: 0 };
-
-  let count = 0;
-  const remaining: PendingSyncItem[] = [];
-
-  for (const item of queue) {
-    try {
-      if (item.type === 'save_event') {
-        await saveEventToSheet(item.payload, accessToken);
-        count++;
-      } else if (item.type === 'registration') {
-        await submitRegistrationData(item.payload, accessToken);
-        count++;
-      } else if (item.type === 'delete_event') {
-        await deleteEventFromSheet(item.payload.eventId, accessToken);
-        count++;
-      } else if (item.type === ('clear_sheet' as any)) {
-        await clearRegistrationSheet(item.payload.formSheet, accessToken);
-        count++;
-      } else if (item.type === ('delete_attendees' as any)) {
-        await deleteRegistrationAttendees(item.payload.formSheet, item.payload.attendeesToDelete, accessToken);
-        count++;
-      }
-    } catch (e) {
-      console.error('Failed to flush item:', item, e);
-      remaining.push(item);
-    }
-  }
-
-  if (remaining.length > 0) {
-    localStorage.setItem('training_pending_sync_queue', JSON.stringify(remaining));
-  } else {
-    clearPendingSyncQueue();
-  }
-
-  return { flushedCount: count };
+// Backward compatibility helper
+export async function initSheetsConfig(): Promise<string> {
+  await ensureInitialDataSeeded();
+  return 'firebase-cloud-active';
 }
 
+export function getPendingSyncQueue() {
+  return [];
+}
+
+export async function flushPendingSyncQueue() {
+  return { flushedCount: 0 };
+}
+
+export const SPREADSHEET_ID = 'firebase-cloud-database';

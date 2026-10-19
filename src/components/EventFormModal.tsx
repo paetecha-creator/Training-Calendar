@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { TrainingEvent, TrainingCategory } from '../types';
-import { CATEGORY_COLORS } from '../services/sheetsService';
+import { CATEGORY_COLORS } from '../services/firebaseService';
 import { X, Save, Calendar, Settings } from 'lucide-react';
 
 interface EventFormModalProps {

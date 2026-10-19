@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TrainingEvent, AttendeeRow, SessionRegistrationData } from '../types';
-import { generateAndDownloadTemplate, parseExcelUpload, exportAttendeesToExcel } from '../utils/excelHelper';
+import { generateAndDownloadTemplate, parseExcelUpload } from '../utils/excelHelper';
 import { generateReceiptNo, downloadRegistrationReceiptPdf, ReceiptInfo } from '../utils/receiptHelper';
 import { TohokuLogo } from './TohokuLogo';
+import { addAttendeesToFirestore, AttendeeWithMeta } from '../services/firebaseService';
 import confetti from 'canvas-confetti';
 import {
   X,
@@ -15,6 +16,14 @@ import {
   AlertTriangle,
   Printer,
   FileDown,
+  Calendar,
+  Clock,
+  MapPin,
+  Building,
+  Phone,
+  ShieldCheck,
+  CheckCircle2,
+  Sparkles,
 } from 'lucide-react';
 
 interface RegisterModalProps {
@@ -23,19 +32,6 @@ interface RegisterModalProps {
   initialData?: SessionRegistrationData | null;
   isAdmin?: boolean;
   onClose: () => void;
-  onSubmit: (
-    payload: {
-      isEditMode: boolean;
-      courseId: string;
-      courseTitle: string;
-      formSheet: string;
-      rowIndices?: number[];
-      data: Array<[string, string, string, string, string, string, string, string, string]>;
-      submitterName: string;
-      submitterDept: string;
-      submitterPhone: string;
-    }
-  ) => Promise<{ success: boolean; insertedIndices: number[]; error?: string }>;
   onRegistrationSuccess: (sessionData: SessionRegistrationData) => void;
 }
 
@@ -45,7 +41,6 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   initialData,
   isAdmin = false,
   onClose,
-  onSubmit,
   onRegistrationSuccess,
 }) => {
   const [rows, setRows] = useState<AttendeeRow[]>([
@@ -62,9 +57,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     },
   ]);
 
-  const [subName, setSubName] = useState('');
-  const [subDept, setSubDept] = useState('');
-  const [subPhone, setSubPhone] = useState('');
+  const [subName, setSubName] = useState(() => localStorage.getItem('last_sub_name') || '');
+  const [subDept, setSubDept] = useState(() => localStorage.getItem('last_sub_dept') || '');
+  const [subPhone, setSubPhone] = useState(() => localStorage.getItem('last_sub_phone') || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -77,7 +72,6 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const prevIsOpenRef = useRef(false);
 
   useEffect(() => {
-    // Only reset form state when modal transitions from closed to open
     if (isOpen && !prevIsOpenRef.current) {
       if (initialData && initialData.isEditMode) {
         setRows(
@@ -97,9 +91,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 },
               ]
         );
-        setSubName(initialData.subName || '');
-        setSubDept(initialData.subDept || '');
-        setSubPhone(initialData.subPhone || '');
+        setSubName(initialData.subName || localStorage.getItem('last_sub_name') || '');
+        setSubDept(initialData.subDept || localStorage.getItem('last_sub_dept') || '');
+        setSubPhone(initialData.subPhone || localStorage.getItem('last_sub_phone') || '');
       } else {
         setRows([
           {
@@ -114,9 +108,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             rem: '',
           },
         ]);
-        setSubName('');
-        setSubDept('');
-        setSubPhone('');
+        setSubName(localStorage.getItem('last_sub_name') || '');
+        setSubDept(localStorage.getItem('last_sub_dept') || '');
+        setSubPhone(localStorage.getItem('last_sub_phone') || '');
       }
       setErrorMsg(null);
       setShowReceipt(false);
@@ -135,7 +129,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         sex: 'Mr.',
         fname: '',
         lname: '',
-        dept: '',
+        dept: subDept || '',
         pos: '',
         exp: '',
         app: '',
@@ -163,31 +157,29 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     if (!file) return;
 
     try {
-      const parsedAttendees = await parseExcelUpload(file);
-      if (parsedAttendees.length === 0) {
-        alert('ไม่พบข้อมูลรายชื่อในไฟล์ Excel หรือไฟล์ว่างเปล่า');
-        return;
+      const parsedRows = await parseExcelUpload(file);
+      if (parsedRows.length > 0) {
+        const mappedRows: AttendeeRow[] = parsedRows.map((r) => ({
+          code: r.code || '',
+          sex: (r.sex as any) || 'Mr.',
+          fname: r.fname || '',
+          lname: r.lname || '',
+          dept: r.dept || subDept || '',
+          pos: r.pos || '',
+          exp: r.exp || '',
+          app: r.app || '',
+          rem: r.rem || '',
+        }));
+        setRows(mappedRows);
+        setErrorMsg(null);
       }
-
-      const formatted: AttendeeRow[] = parsedAttendees.map((p) => ({
-        code: p.code || '',
-        sex: p.sex || 'Mr.',
-        fname: p.fname || '',
-        lname: p.lname || '',
-        dept: p.dept || '',
-        pos: p.pos || '',
-        exp: p.exp || '',
-        app: p.app || '',
-        rem: p.rem || '',
-      }));
-
-      setRows(formatted);
-      alert(`อัปโหลดข้อมูลจาก Excel สำเร็จ: นำเข้า ${formatted.length} รายชื่อเรียบร้อย`);
-    } catch (err) {
-      console.error('Upload error', err);
-      alert('เกิดข้อผิดพลาดในการอ่านไฟล์ Excel กรุณาตรวจสอบรูปแบบไฟล์ตามเทมเพลต');
+    } catch (err: unknown) {
+      console.error(err);
+      setErrorMsg('ไม่สามารถอ่านไฟล์ Excel ได้ กรุณาใช้ไฟล์แบบฟอร์มที่ดาวน์โหลดจากระบบ');
     } finally {
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -195,116 +187,109 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     e.preventDefault();
     setErrorMsg(null);
 
-    // Validate Submitter
+    // Validate submitter info
     if (!subName.trim() || !subDept.trim() || !subPhone.trim()) {
-      setErrorMsg('กรุณากรอกข้อมูลผู้ประสานงาน (Submitter) ให้ครบถ้วน');
+      setErrorMsg('กรุณากรอกข้อมูลผู้ส่งข้อมูล (ชื่อ-นามสกุล, แผนก, เบอร์โทรติดต่อ) ให้ครบถ้วน');
       return;
     }
 
-    // Validate rows
-    for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
-      if (
-        !r.code.trim() ||
-        !r.fname.trim() ||
-        !r.lname.trim() ||
-        !r.dept.trim() ||
-        !r.pos.trim() ||
-        !r.exp.trim() ||
-        !r.app.trim()
-      ) {
-        setErrorMsg(`กรุณากรอกข้อมูลในตารางให้ครบทุกช่อง (ยกเว้นหมายเหตุ) ในแถวที่ ${i + 1}`);
-        return;
-      }
+    // Validate attendees
+    const validRows = rows.filter((r) => r.fname.trim() !== '' && r.lname.trim() !== '');
+    if (validRows.length === 0) {
+      setErrorMsg('กรุณาระบุชื่อและนามสกุลของผู้เข้าอบรมอย่างน้อย 1 ท่าน');
+      return;
     }
 
-    setIsSubmitting(true);
+    // Check duplicate codes in same submission
+    const codes = validRows.map((r) => r.code.trim()).filter((c) => c !== '');
+    const uniqueCodes = new Set(codes);
+    if (codes.length !== uniqueCodes.size) {
+      setErrorMsg('พบรหัสพนักงานซ้ำกันในรายการที่กรอก กรุณาตรวจสอบข้อมูล');
+      return;
+    }
 
+    // Cache submitter info in localStorage for future convenience
+    localStorage.setItem('last_sub_name', subName.trim());
+    localStorage.setItem('last_sub_dept', subDept.trim());
+    localStorage.setItem('last_sub_phone', subPhone.trim());
+
+    setIsSubmitting(true);
     try {
-      const dataPayload: Array<[string, string, string, string, string, string, string, string, string]> = rows.map(
-        (r) => [
-          r.code.trim(),
-          r.sex,
-          r.fname.trim(),
-          r.lname.trim(),
-          r.dept.trim(),
-          r.pos.trim(),
-          r.exp.trim(),
-          r.app.trim(),
-          r.rem ? r.rem.trim() : '',
-        ]
+      const receiptNo = generateReceiptNo();
+
+      // Save directly to Firebase Firestore
+      const res = await addAttendeesToFirestore(
+        event,
+        validRows,
+        {
+          name: subName.trim(),
+          dept: subDept.trim(),
+          phone: subPhone.trim(),
+        },
+        receiptNo
       );
 
-      const isEdit = Boolean(initialData && initialData.isEditMode);
-      const targetSheet = event.formSheet || 'Register-1';
-
-      const res = await onSubmit({
-        isEditMode: isEdit,
-        courseId: event.id,
-        courseTitle: event.title,
-        formSheet: targetSheet,
-        rowIndices: isEdit ? initialData?.rowIndices : undefined,
-        data: dataPayload,
-        submitterName: subName.trim(),
-        submitterDept: subDept.trim(),
-        submitterPhone: subPhone.trim(),
-      });
-
       if (res.success) {
-        // Save session state for "Edit Latest"
-        const savedSession: SessionRegistrationData = {
-          courseId: event.id,
-          courseTitle: event.title,
-          formSheet: targetSheet,
-          rowIndices: res.insertedIndices,
-          rowData: rows,
-          subName: subName.trim(),
-          subDept: subDept.trim(),
-          subPhone: subPhone.trim(),
-          submissionDate: new Date().toISOString(),
-          isEditMode: true,
-        };
-
-        onRegistrationSuccess(savedSession);
-
-        // Build Receipt Data
-        const receiptNo = generateReceiptNo();
-        const receiptData: ReceiptInfo = {
-          receiptNo,
-          courseTitle: event.title,
-          courseDate: event.start,
-          courseTime: event.startTime ? `${event.startTime} - ${event.endTime || ''}` : '',
-          submitterName: subName.trim(),
-          submitterDept: subDept.trim(),
-          submitterPhone: subPhone.trim(),
-          submissionDate: new Date().toLocaleString('th-TH', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          attendees: JSON.parse(JSON.stringify(rows)),
-        };
-
-        setReceiptInfo(receiptData);
-        setShowReceipt(true);
-
+        // Trigger celebratory confetti!
         try {
           confetti({
             particleCount: 80,
-            spread: 70,
+            spread: 60,
             origin: { y: 0.6 },
           });
-        } catch {
+        } catch (e) {
           // ignore
         }
+
+        const now = new Date();
+        const submissionDateStr = now.toLocaleDateString('th-TH', {
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+
+        const receipt: ReceiptInfo = {
+          receiptNo,
+          courseTitle: event.title,
+          courseCategory: event.category,
+          courseDate: `${event.start}${event.end && event.end !== event.start ? ' ถึง ' + event.end : ''}`,
+          courseTime: `${event.startTime} - ${event.endTime} น.`,
+          courseLocation: event.location,
+          submitterName: subName.trim(),
+          submitterDept: subDept.trim(),
+          submitterPhone: subPhone.trim(),
+          submissionDate: submissionDateStr,
+          attendees: validRows,
+        };
+
+        setReceiptInfo(receipt);
+        setShowReceipt(true);
+
+        const sessionData: SessionRegistrationData = {
+          isEditMode: true,
+          courseId: event.id,
+          courseTitle: event.title,
+          formSheet: event.formSheet || '',
+          rowIndices: [],
+          rowData: validRows,
+          openDate: event.openDate,
+          closeDate: event.closeDate,
+          subName: subName.trim(),
+          subDept: subDept.trim(),
+          subPhone: subPhone.trim(),
+          submissionDate: submissionDateStr,
+        };
+
+        localStorage.setItem('training_session_reg', JSON.stringify(sessionData));
+        onRegistrationSuccess(sessionData);
       } else {
-        setErrorMsg(res.error || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+        setErrorMsg(res.error || 'เกิดข้อผิดพลาดในการลงทะเบียน กรุณาลองใหม่อีกครั้ง');
       }
     } catch (err: unknown) {
       console.error(err);
-      setErrorMsg((err as Error).message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ');
+      setErrorMsg('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
     } finally {
       setIsSubmitting(false);
     }
@@ -314,434 +299,380 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     if (!receiptInfo) return;
     setIsDownloadingPdf(true);
     try {
-      const cardEl = document.getElementById('receipt-print-card');
-      await downloadRegistrationReceiptPdf(receiptInfo, cardEl);
-    } catch (e) {
-      console.error('PDF Download Error:', e);
-      // Fallback try without card element
-      try {
-        await downloadRegistrationReceiptPdf(receiptInfo);
-      } catch (err) {
-        console.error('Fallback PDF Download Error:', err);
-        alert('เกิดข้อผิดพลาดในการสร้างไฟล์ PDF ท่านสามารถกดปุ่มพิมพ์เอกสาร (Print) เพื่อบันทึกเป็น PDF แทนได้');
-      }
+      await downloadRegistrationReceiptPdf(receiptInfo);
+    } catch (err) {
+      console.error('PDF error', err);
+      alert('ไม่สามารถดาวน์โหลดเอกสาร PDF ได้');
     } finally {
       setIsDownloadingPdf(false);
     }
   };
 
-  const handleDownloadExcel = () => {
-    if (!receiptInfo) return;
-    exportAttendeesToExcel(
-      receiptInfo.attendees,
-      `${receiptInfo.courseTitle} (ลงทะเบียนสำเร็จ)`,
-      receiptInfo.receiptNo
-    );
-  };
-
-  const handlePrint = () => {
-    window.print();
-  };
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 md:p-6 bg-slate-900/40 backdrop-blur-xs">
-      <div className="rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden bg-white border border-slate-200 shadow-2xl">
-        {/* Modal Header */}
-        <div className="p-4 md:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0 bg-slate-50/80 border-b border-slate-200">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase px-2.5 py-0.5 rounded-md bg-indigo-600 text-white">
-                {event.category}
-              </span>
-              {isAdmin && event.formSheet && (
-                <span className="text-xs font-mono font-semibold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md">
-                  Sheet: {event.formSheet}
-                </span>
-              )}
-            </div>
-            <h2 className="text-base md:text-lg font-bold text-slate-900 mt-1.5 tracking-tight">
-              {initialData?.isEditMode ? 'แก้ไขข้อมูลการลงทะเบียน: ' : 'แบบฟอร์มลงทะเบียน: '}
-              {event.title}
-            </h2>
-            <div className="text-xs text-slate-500 flex items-center gap-2 mt-1 flex-wrap font-medium">
-              <span>วันที่จัดอบรม: {event.start}</span>
-              {event.openDate && <span>· เปิดรับ: {event.openDate}</span>}
-              {event.closeDate && <span>· ปิดรับ: {event.closeDate}</span>}
-            </div>
-          </div>
-
-          {/* Excel Template & Upload Action Buttons */}
-          <div className="flex items-center gap-2 flex-wrap shrink-0">
-            <button
-              type="button"
-              onClick={generateAndDownloadTemplate}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
-            >
-              <Download className="w-4 h-4 text-indigo-600" />
-              <span>โหลดเทมเพลต (Excel)</span>
-            </button>
-
-            <label className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 hover:text-indigo-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors mb-0">
-              <Upload className="w-4 h-4 text-indigo-600" />
-              <span>อัปโหลดรายชื่อ (Excel)</span>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx, .xls"
-                onChange={handleFileUpload}
-                className="hidden"
-              />
-            </label>
-
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 cursor-pointer ml-1 transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Modal Main Content */}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
+      <div className="rounded-2xl w-full max-w-4xl bg-white border border-slate-200 shadow-2xl flex flex-col my-auto overflow-hidden">
+        {/* =================================================== */}
+        {/* VIEW 1: REGISTRATION SUCCESS RECEIPT */}
+        {/* =================================================== */}
         {showReceipt && receiptInfo ? (
-          /* Registration Confirmation Screen with PDF and Excel downloads */
-          <div className="p-5 md:p-7 flex flex-col items-center max-w-4xl mx-auto w-full overflow-y-auto">
-            {/* Success Icon & Banner */}
-            <div className="w-16 h-16 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-600 flex items-center justify-center mb-3">
-              <CheckCircle className="w-9 h-9 text-emerald-600" />
+          <div className="flex flex-col max-h-[85vh] overflow-y-auto p-4 sm:p-6 md:p-8">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-200">
+              <TohokuLogo size="md" />
+              <div className="text-right">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                  ใบเสร็จยืนยันการลงทะเบียน
+                </span>
+                <span className="text-xs font-mono font-bold text-[#1e3a8a] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {receiptInfo.receiptNo}
+                </span>
+              </div>
             </div>
 
-            <h3 className="text-xl md:text-2xl font-bold text-slate-900 mb-1">ลงทะเบียนสำเร็จเรียบร้อย!</h3>
-            <p className="text-xs text-slate-500 mb-5 text-center font-medium">
-              ระบบได้รับข้อมูลเรียบร้อยแล้ว ท่านสามารถดาวน์โหลดหลักฐานการลงทะเบียนเป็น PDF หรือ Excel เก็บไว้ได้ทันที
-            </p>
+            <div className="my-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto mb-2 shadow-sm">
+                <CheckCircle2 className="w-7 h-7" />
+              </div>
+              <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
+                ลงทะเบียนสำเร็จเรียบร้อยแล้ว!
+              </h3>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                บันทึกลงฐานข้อมูล Firebase เรียลไทม์ และประสานงานกับฝ่ายฝึกอบรมทันที
+              </p>
+            </div>
 
-            {/* Action Buttons: PDF + Excel (.xlsx) + Print */}
-            <div className="w-full flex items-center justify-center gap-3 mb-6 flex-wrap">
+            {/* Course & Submitter Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  หลักสูตรฝึกอบรม
+                </span>
+                <h4 className="text-sm font-bold text-slate-900">{receiptInfo.courseTitle}</h4>
+                <div className="text-xs text-slate-600 mt-2 space-y-1">
+                  <div>📅 วันที่: {receiptInfo.courseDate}</div>
+                  {receiptInfo.courseTime && <div>⏰ เวลา: {receiptInfo.courseTime}</div>}
+                  {receiptInfo.courseLocation && <div>📍 สถานที่: {receiptInfo.courseLocation}</div>}
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                  ข้อมูลผู้ส่ง / ผู้ประสานงาน
+                </span>
+                <h4 className="text-sm font-bold text-slate-900">{receiptInfo.submitterName}</h4>
+                <div className="text-xs text-slate-600 mt-2 space-y-1">
+                  <div>🏢 แผนก: {receiptInfo.submitterDept}</div>
+                  <div>📞 เบอร์โทรศัพท์: {receiptInfo.submitterPhone}</div>
+                  <div>🕒 วันที่ทำรายการ: {receiptInfo.submissionDate}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Attendees Summary Table */}
+            <div className="mb-6">
+              <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                รายชื่อผู้เข้าร่วมอบรม ({receiptInfo.attendees.length} ท่าน)
+              </h4>
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px]">
+                    <tr>
+                      <th className="p-2 w-10 text-center">ลำดับ</th>
+                      <th className="p-2 w-24">รหัสพนักงาน</th>
+                      <th className="p-2">ชื่อ - นามสกุล</th>
+                      <th className="p-2">แผนก</th>
+                      <th className="p-2">ตำแหน่ง</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {receiptInfo.attendees.map((a, idx) => (
+                      <tr key={idx}>
+                        <td className="p-2 text-center text-slate-500 font-bold">{idx + 1}</td>
+                        <td className="p-2 font-mono font-bold text-[#1e3a8a]">{a.code || '-'}</td>
+                        <td className="p-2 font-semibold text-slate-900">
+                          {a.sex} {a.fname} {a.lname}
+                        </td>
+                        <td className="p-2 text-slate-600">{a.dept || '-'}</td>
+                        <td className="p-2 text-slate-600">{a.pos || '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center justify-between pt-4 border-t border-slate-200 flex-wrap gap-2">
               <button
                 type="button"
                 onClick={handleDownloadPdf}
                 disabled={isDownloadingPdf}
-                className="flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:from-[#172554] hover:to-[#0f172a] shadow-xs cursor-pointer transition-all"
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-[#1e3a8a] bg-blue-50 hover:bg-blue-100 border border-blue-200 cursor-pointer transition-all"
               >
-                <FileDown className="w-4 h-4 md:w-5 md:h-5 text-white" />
-                <span>
-                  {isDownloadingPdf ? 'กำลังสร้างไฟล์ PDF...' : 'ดาวน์โหลดหลักฐานการลงทะเบียน (PDF)'}
-                </span>
+                <FileDown className="w-4 h-4" />
+                <span>{isDownloadingPdf ? 'กำลังสร้าง PDF...' : 'ดาวน์โหลดใบยืนยัน (PDF)'}</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handleDownloadExcel}
-                className="flex items-center gap-2 py-2.5 px-4 rounded-xl text-xs md:text-sm font-bold text-[#1e3a8a] bg-blue-50/70 hover:bg-blue-100 border border-blue-200/70 cursor-pointer transition-colors"
-              >
-                <Download className="w-4 h-4 md:w-5 md:h-5 text-[#1e3a8a]" />
-                <span>ดาวน์โหลดรายชื่อที่ลงทะเบียน (Excel .xlsx)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handlePrint}
-                className="flex items-center gap-1.5 py-2.5 px-4 rounded-xl text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 cursor-pointer transition-colors"
-              >
-                <Printer className="w-4 h-4 text-slate-500" />
-                <span>พิมพ์เอกสาร (Print)</span>
-              </button>
-            </div>
-
-            {/* Official Registration Receipt Card */}
-            <div id="receipt-print-card" className="w-full rounded-2xl p-5 md:p-6 text-left text-xs space-y-4 bg-white border border-slate-200 shadow-xs">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-4 gap-2 border-b border-slate-100">
-                <div>
-                  <div className="flex items-center gap-2.5">
-                    <svg className="w-8 h-8 shrink-0" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="50" cy="50" r="44" stroke="#DC2626" strokeWidth="5.5" fill="none" />
-                      <line x1="6" y1="50" x2="94" y2="50" stroke="#DC2626" strokeWidth="4.5" />
-                      <ellipse cx="50" cy="50" rx="43" ry="24" stroke="#DC2626" strokeWidth="4.5" fill="none" />
-                      <line x1="16" y1="28" x2="84" y2="28" stroke="#DC2626" strokeWidth="4" />
-                      <line x1="16" y1="72" x2="84" y2="72" stroke="#DC2626" strokeWidth="4" />
-                      <ellipse cx="50" cy="50" rx="24" ry="44" stroke="#DC2626" strokeWidth="4.5" fill="none" />
-                      <line x1="50" y1="6" x2="50" y2="94" stroke="#DC2626" strokeWidth="4.5" />
-                    </svg>
-                    <span className="font-black text-lg text-[#02478b] tracking-wider">
-                      TOHOKU SOLUTIONS
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-500 font-semibold mt-1 ml-10.5">
-                    Corporate Training & Development Center | TSTraining Center
-                  </div>
-                </div>
-                <div className="text-left sm:text-right">
-                  <span className="inline-block bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold px-3 py-1 rounded-lg text-xs">
-                    ✓ ยืนยันการลงทะเบียนแล้ว (CONFIRMED)
-                  </span>
-                  <div className="font-mono text-slate-500 font-semibold text-[11px] mt-1 tabular-nums">
-                    เลขที่เอกสาร: {receiptInfo.receiptNo}
-                  </div>
-                </div>
-              </div>
-
-              {/* Course Info Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 bg-slate-50/80 p-4 rounded-xl border border-slate-200/60">
-                <div>
-                  <span className="text-[11px] text-slate-500 font-bold block">หลักสูตร (Course):</span>
-                  <span className="text-sm font-bold text-indigo-600">{receiptInfo.courseTitle}</span>
-                </div>
-                <div>
-                  <span className="text-[11px] text-slate-500 font-bold block">วันที่และเวลาอบรม:</span>
-                  <span className="font-semibold text-slate-900">
-                    {receiptInfo.courseDate} {receiptInfo.courseTime ? `(${receiptInfo.courseTime} น.)` : ''}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[11px] text-slate-500 font-bold block">ผู้ประสานงาน (Submitter):</span>
-                  <span className="font-semibold text-slate-900">
-                    {receiptInfo.submitterName} ({receiptInfo.submitterDept})
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[11px] text-slate-500 font-bold block">เบอร์ติดต่อ & เวลาทำรายการ:</span>
-                  <span className="font-medium text-slate-700">
-                    {receiptInfo.submitterPhone} | {receiptInfo.submissionDate}
-                  </span>
-                </div>
-              </div>
-
-              {/* Summary Table */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h5 className="font-bold text-slate-900 text-xs">
-                    รายชื่อผู้ลงทะเบียนในรอบนี้ (จำนวน {receiptInfo.attendees.length} ท่าน):
-                  </h5>
-                  <span className="text-[11px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-0.5 rounded-md">
-                    เฉพาะรายชื่อที่ส่งในรอบนี้
-                  </span>
-                </div>
-
-                <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                  <table className="w-full text-left text-xs">
-                    <thead className="text-[11px] font-bold text-slate-700 bg-slate-50 border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5 px-3 text-center w-10">#</th>
-                        <th className="py-2.5 px-3 w-24">รหัส</th>
-                        <th className="py-2.5 px-3 w-16">เพศ</th>
-                        <th className="py-2.5 px-3">ชื่อ-นามสกุล</th>
-                        <th className="py-2.5 px-3">แผนก/ฝ่าย</th>
-                        <th className="py-2.5 px-3">ตำแหน่ง</th>
-                        <th className="py-2.5 px-3">ความคาดหวัง</th>
-                        <th className="py-2.5 px-3">การปรับใช้</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {receiptInfo.attendees.map((a, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="py-2 px-3 text-center font-medium text-slate-400 tabular-nums">{idx + 1}</td>
-                          <td className="py-2 px-3 font-mono font-semibold text-indigo-600 tabular-nums">{a.code}</td>
-                          <td className="py-2 px-3 text-slate-600">{a.sex}</td>
-                          <td className="py-2 px-3 font-semibold text-slate-900">{a.fname} {a.lname}</td>
-                          <td className="py-2 px-3 text-slate-700">{a.dept}</td>
-                          <td className="py-2 px-3 text-slate-600">{a.pos}</td>
-                          <td className="py-2 px-3 text-slate-600 text-[11px] truncate max-w-[160px]" title={a.exp}>
-                            {a.exp}
-                          </td>
-                          <td className="py-2 px-3 text-slate-600 text-[11px] truncate max-w-[160px]" title={a.app}>
-                            {a.app}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 w-full flex justify-end">
               <button
                 type="button"
                 onClick={onClose}
-                className="py-2.5 px-6 rounded-xl text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 cursor-pointer transition-colors"
+                className="px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:shadow-md cursor-pointer transition-all"
               >
-                ปิดหน้าต่าง (Done)
+                เสร็จสิ้น / ปิดหน้าต่าง
               </button>
             </div>
           </div>
         ) : (
-          /* Form Content */
-          <form onSubmit={handleSubmit} className="flex flex-col flex-1 overflow-hidden">
-            <div className="p-4 md:p-6 overflow-y-auto space-y-5 flex-1">
-              {/* Important Instruction Notice */}
-              <div className="p-3.5 bg-blue-50/70 border border-blue-100 rounded-xl flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-[#1e3a8a] shrink-0 mt-0.5" />
-                <div className="text-xs text-slate-700 leading-relaxed">
-                  <p className="font-bold text-slate-900">
-                    ผู้รับผิดชอบพิจารณาและบันทึกข้อมูลเกี่ยวกับความคาดหวังในการฝึกอบรมและการนำไปปรับใช้กับงาน
-                  </p>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    เนื่องจากกลุ่มงาน Training จะนำข้อมูลนี้ไปปรับปรุงและพัฒนาระบบการฝึกอบรมให้มีประสิทธิภาพสูงสุด
-                  </p>
+          /* =================================================== */
+          /* VIEW 2: REGISTRATION FORM */
+          /* =================================================== */
+          <form onSubmit={handleSubmit} className="flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 to-blue-50/50 border-b border-slate-200 flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <TohokuLogo size="sm" className="hidden sm:flex mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-md border border-black/5"
+                      style={{ backgroundColor: event.color, color: event.textColor || '#0f172a' }}
+                    >
+                      {event.category}
+                    </span>
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      เปิดรับลงทะเบียน
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
+                    {event.title}
+                  </h3>
+                  <div className="flex items-center gap-3 text-[11px] text-slate-500 font-medium mt-1 flex-wrap">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-[#1e3a8a]" />
+                      {event.start} {event.end && event.end !== event.start ? ` ถึง ${event.end}` : ''}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-[#1e3a8a]" />
+                      {event.startTime} - {event.endTime} น.
+                    </span>
+                    {event.location && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="w-3 h-3 text-[#1e3a8a]" />
+                        {event.location}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
+              <button
+                type="button"
+                onClick={onClose}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-white cursor-pointer transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Form Body */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
               {errorMsg && (
-                <div className="p-3 neu-inset rounded-2xl text-xs font-bold text-rose-500">
-                  {errorMsg}
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
+                  <span>{errorMsg}</span>
                 </div>
               )}
 
-              {/* Attendees Dynamic Table */}
+              {/* Submitter Details */}
+              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-[#1e3a8a]" />
+                  <span>ข้อมูลผู้ส่งรายชื่อ / ผู้ประสานงาน (Submitter Information)</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                      ชื่อ - นามสกุล <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="เช่น สมชาย ใจดี"
+                      value={subName}
+                      onChange={(e) => setSubName(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                      แผนก / ฝ่าย <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="เช่น ENG / PTE"
+                      value={subDept}
+                      onChange={(e) => setSubDept(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] font-bold text-slate-600 block mb-1">
+                      เบอร์โทรติดต่อ <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="เช่น 081-234-5678 หรือ เบอร์ต่อ 123"
+                      value={subPhone}
+                      onChange={(e) => setSubPhone(e.target.value)}
+                      className="w-full px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Trainees List Table */}
               <div>
-                <div className="flex items-center justify-between mb-2.5">
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    รายชื่อผู้เข้าร่วมอบรม ({rows.length} ท่าน) <span className="text-rose-500">*</span>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-[#1e3a8a]" />
+                    <span>รายชื่อผู้เข้ารับการอบรม ({rows.length} ท่าน)</span>
                   </h4>
-                  <button
-                    type="button"
-                    onClick={addRow}
-                    className="flex items-center gap-1.5 text-xs font-bold text-[#1e3a8a] bg-blue-50/80 hover:bg-blue-100 border border-blue-200/70 px-3 py-1.5 rounded-lg transition-all cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-[#1e3a8a]" />
-                    <span>เพิ่มรายชื่อ (Add Row)</span>
-                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => generateAndDownloadTemplate()}
+                      className="text-[11px] font-bold text-slate-600 hover:text-[#1e3a8a] flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Download className="w-3 h-3" />
+                      <span>แบบฟอร์ม Excel</span>
+                    </button>
+
+                    <label className="text-[11px] font-bold text-[#1e3a8a] hover:bg-blue-50 flex items-center gap-1 px-2.5 py-1 border border-blue-200 rounded-lg transition-colors cursor-pointer">
+                      <Upload className="w-3 h-3" />
+                      <span>นำเข้า Excel</span>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".xlsx, .xls"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <button
+                      type="button"
+                      onClick={addRow}
+                      className="text-[11px] font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] flex items-center gap-1 px-3 py-1 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ เพิ่มผู้เข้าอบรม</span>
+                    </button>
+                  </div>
                 </div>
 
-                <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
-                  <table className="w-full text-left text-xs min-w-[1100px]">
-                    <thead className="text-[11px] font-bold text-slate-700 uppercase bg-slate-50 border-b border-slate-200">
+                {/* Rows Table */}
+                <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs">
+                  <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+                    <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200 select-none">
                       <tr>
-                        <th className="py-2.5 px-2 text-center w-12">#</th>
-                        <th className="py-2.5 px-2 w-28">
-                          Code <span className="text-rose-500">*</span>
-                        </th>
-                        <th className="py-2.5 px-2 w-24">Sex</th>
-                        <th className="py-2.5 px-2 w-36">
-                          ชื่อ (First Name) <span className="text-rose-500">*</span>
-                        </th>
-                        <th className="py-2.5 px-2 w-36">
-                          นามสกุล (Last Name) <span className="text-rose-500">*</span>
-                        </th>
-                        <th className="py-2.5 px-2 w-40">
-                          แผนก (Dept) <span className="text-rose-500">*</span>
-                        </th>
-                        <th className="py-2.5 px-2 w-36">
-                          ตำแหน่ง (Position) <span className="text-rose-500">*</span>
-                        </th>
-                        <th className="py-2.5 px-2">
-                          ความคาดหวัง (Expectation) <span className="text-rose-500">*</span>
-                        </th>
-                        <th className="py-2.5 px-2">
-                          การนำไปปรับใช้ (Application) <span className="text-rose-500">*</span>
-                        </th>
-                        <th className="py-2.5 px-2 w-28">หมายเหตุ</th>
-                        <th className="py-2.5 px-2 text-center w-12">ลบ</th>
+                        <th className="p-2 text-center w-10">ลำดับ</th>
+                        <th className="p-2 w-28">รหัสพนักงาน</th>
+                        <th className="p-2 w-20">คำนำหน้า</th>
+                        <th className="p-2 min-w-[120px]">ชื่อ *</th>
+                        <th className="p-2 min-w-[120px]">นามสกุล *</th>
+                        <th className="p-2 min-w-[100px]">แผนก</th>
+                        <th className="p-2 min-w-[100px]">ตำแหน่ง</th>
+                        <th className="p-2 w-20">เบอร์ต่อ</th>
+                        <th className="p-2 w-10 text-center"></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-100 bg-white">
                       {rows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="py-2 px-2 text-center font-medium text-slate-400 tabular-nums">
-                            {idx + 1}
-                          </td>
-                          <td className="py-1.5 px-1.5">
+                        <tr key={idx} className="hover:bg-slate-50/70">
+                          <td className="p-2 text-center font-bold text-slate-400">{idx + 1}</td>
+                          <td className="p-2">
                             <input
                               type="text"
-                              required
-                              placeholder="EMP-..."
+                              placeholder="เช่น 9579"
                               value={row.code}
                               onChange={(e) => updateRow(idx, 'code', e.target.value)}
-                              className="w-full text-xs font-medium p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
+                              className="w-full px-2 py-1 text-xs font-mono font-bold border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
                             />
                           </td>
-                          <td className="py-1.5 px-1.5">
+                          <td className="p-2">
                             <select
                               value={row.sex}
-                              onChange={(e) =>
-                                updateRow(idx, 'sex', e.target.value as 'Mr.' | 'Ms.' | 'Mrs.')
-                              }
-                              className="w-full text-xs font-medium p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
+                              onChange={(e) => updateRow(idx, 'sex', e.target.value as any)}
+                              className="w-full px-1.5 py-1 text-xs border border-slate-200 rounded outline-none"
                             >
                               <option value="Mr.">Mr.</option>
                               <option value="Ms.">Ms.</option>
                               <option value="Mrs.">Mrs.</option>
                             </select>
                           </td>
-                          <td className="py-1.5 px-1.5">
+                          <td className="p-2">
                             <input
                               type="text"
                               required
                               placeholder="ชื่อ"
                               value={row.fname}
                               onChange={(e) => updateRow(idx, 'fname', e.target.value)}
-                              className="w-full text-xs font-medium p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
+                              className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
                             />
                           </td>
-                          <td className="py-1.5 px-1.5">
+                          <td className="p-2">
                             <input
                               type="text"
                               required
                               placeholder="นามสกุล"
                               value={row.lname}
                               onChange={(e) => updateRow(idx, 'lname', e.target.value)}
-                              className="w-full text-xs font-medium p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
+                              className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
                             />
                           </td>
-                          <td className="py-1.5 px-1.5">
+                          <td className="p-2">
                             <input
                               type="text"
-                              required
-                              placeholder="ฝ่าย / แผนก"
+                              placeholder="แผนก"
                               value={row.dept}
                               onChange={(e) => updateRow(idx, 'dept', e.target.value)}
-                              className="w-full text-xs font-medium p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
+                              className="w-full px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
                             />
                           </td>
-                          <td className="py-1.5 px-1.5">
+                          <td className="p-2">
                             <input
                               type="text"
-                              required
                               placeholder="ตำแหน่ง"
                               value={row.pos}
                               onChange={(e) => updateRow(idx, 'pos', e.target.value)}
-                              className="w-full text-xs font-medium p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
+                              className="w-full px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
                             />
                           </td>
-                          <td className="py-1.5 px-1.5">
+                          <td className="p-2">
                             <input
                               type="text"
-                              required
-                              placeholder="ความคาดหวังต่อหลักสูตร"
+                              placeholder="เบอร์ต่อ"
                               value={row.exp}
                               onChange={(e) => updateRow(idx, 'exp', e.target.value)}
-                              className="w-full text-xs font-normal p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
+                              className="w-full px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
                             />
                           </td>
-                          <td className="py-1.5 px-1.5">
-                            <input
-                              type="text"
-                              required
-                              placeholder="การนำไปปรับใช้ในงาน"
-                              value={row.app}
-                              onChange={(e) => updateRow(idx, 'app', e.target.value)}
-                              className="w-full text-xs font-normal p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
-                            />
-                          </td>
-                          <td className="py-1.5 px-1.5">
-                            <input
-                              type="text"
-                              placeholder="-"
-                              value={row.rem || ''}
-                              onChange={(e) => updateRow(idx, 'rem', e.target.value)}
-                              className="w-full text-xs font-normal p-1.5 bg-white border border-slate-200 rounded-md focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
-                            />
-                          </td>
-                          <td className="py-1.5 px-1.5 text-center">
-                            <button
-                              type="button"
-                              onClick={() => removeRow(idx)}
-                              className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-md cursor-pointer transition-colors"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                          <td className="p-2 text-center">
+                            {rows.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => removeRow(idx)}
+                                className="text-slate-400 hover:text-rose-600 p-1 rounded cursor-pointer"
+                                title="ลบแถวนี้"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </td>
                         </tr>
                       ))}
@@ -749,94 +680,31 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   </table>
                 </div>
               </div>
-
-              {/* Submitter Info Card */}
-              <div className="p-4 rounded-xl border border-slate-200/80 bg-slate-50/70 space-y-3">
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-indigo-600" />
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    ข้อมูลผู้ประสานงาน (Submitter Information) <span className="text-rose-500">*</span>
-                  </h4>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      ชื่อ-นามสกุล ผู้ส่งข้อมูล <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="เช่น นายประสานงาน ใจมั่น"
-                      value={subName}
-                      onChange={(e) => setSubName(e.target.value)}
-                      className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      แผนก / ฝ่าย <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="เช่น ฝ่ายทรัพยากรบุคคล"
-                      value={subDept}
-                      onChange={(e) => setSubDept(e.target.value)}
-                      className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                      เบอร์โทรศัพท์ติดต่อ <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="tel"
-                      required
-                      placeholder="เช่น 081-234-5678"
-                      value={subPhone}
-                      onChange={(e) => setSubPhone(e.target.value)}
-                      className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
             </div>
 
-            {/* Footer Submit Buttons */}
-            <div className="p-4 flex items-center justify-between shrink-0 bg-slate-50/80 border-t border-slate-200">
-              <span className="text-xs font-medium text-slate-500">
-                รวมผู้ลงทะเบียน: <strong className="text-slate-900 font-bold">{rows.length} ท่าน</strong>
-              </span>
+            {/* Footer Buttons */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-xl transition-all cursor-pointer"
+              >
+                ยกเลิก
+              </button>
 
-              <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={onClose}
-                  className="px-4 py-2 rounded-lg text-xs font-bold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 cursor-pointer transition-colors"
-                >
-                  ยกเลิก (Cancel)
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:from-[#172554] hover:to-[#0f172a] shadow-xs cursor-pointer transition-all"
-                >
-                  {isSubmitting ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>กำลังส่งข้อมูล...</span>
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="w-4 h-4 text-white" />
-                      <span>ลงทะเบียน (Submit Registration)</span>
-                    </>
-                  )}
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-6 py-2.5 text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:from-[#172554] hover:to-[#0f172a] rounded-xl shadow-md cursor-pointer transition-all disabled:opacity-50"
+              >
+                <CheckCircle className="w-4 h-4" />
+                <span>
+                  {isSubmitting
+                    ? 'กำลังบันทึกลงฐานข้อมูล Firebase...'
+                    : `ยืนยันการลงทะเบียน (${rows.length} ท่าน)`}
+                </span>
+              </button>
             </div>
           </form>
         )}

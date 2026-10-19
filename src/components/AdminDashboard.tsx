@@ -1,1009 +1,1090 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { TrainingEvent, AttendeeRow, FormSheetName } from '../types';
+import React, { useState, useMemo } from 'react';
+import { TrainingEvent, AttendeeRow, HolidayItem } from '../types';
 import {
-  getRegistrationAttendees,
-  clearRegistrationSheet,
-  deleteRegistrationAttendees,
-  forcePushSheetToGoogleSheets,
-  testSheetsWebApp,
-  initSheetsConfig,
-  SPREADSHEET_ID,
-  getSheetsWebAppUrl,
-  setSheetsWebAppUrl,
-  getPendingSyncQueue,
-  flushPendingSyncQueue,
-} from '../services/sheetsService';
+  AttendeeWithMeta,
+  saveEventToFirestore,
+  deleteEventFromFirestore,
+  saveHolidayToFirestore,
+  deleteHolidayFromFirestore,
+  addAttendeesToFirestore,
+  updateAttendeeInFirestore,
+  deleteAttendeesFromFirestore,
+  clearCourseAttendeesFromFirestore,
+} from '../services/firebaseService';
 import { exportAttendeesToExcel } from '../utils/excelHelper';
+import { HolidayFormModal } from './HolidayFormModal';
 import {
-  FileSpreadsheet,
   Users,
   Download,
   Trash2,
   RefreshCw,
   Search,
-  ExternalLink,
-  Database,
+  Plus,
+  Edit2,
+  Calendar,
   CheckCircle2,
-  Settings,
-  UploadCloud,
-  Code,
-  KeyRound,
-  Check,
-  Copy,
-  AlertTriangle,
-  Send,
+  XCircle,
+  Sparkles,
+  BookOpen,
+  Filter,
+  CheckSquare,
+  Square,
+  ShieldCheck,
   Zap,
+  Phone,
+  Building,
+  UserCheck,
+  ChevronDown,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
   events: TrainingEvent[];
-  accessToken: string | null;
-  onRefreshEvents: () => void;
-  isSyncing: boolean;
-  onGoogleSignIn?: () => Promise<void>;
+  holidays: HolidayItem[];
+  attendees: AttendeeWithMeta[];
+  onOpenNewEventModal: () => void;
+  onEditEvent: (event: TrainingEvent) => void;
+  onRefresh: () => void;
+  initialTab?: 'registrations' | 'courses' | 'holidays';
 }
-
-const FORM_SHEETS: FormSheetName[] = [
-  'Register-1',
-  'Register-2',
-  'Register-3',
-  'Register-4',
-  'Register-5',
-];
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   events,
-  accessToken,
-  onRefreshEvents,
-  isSyncing,
-  onGoogleSignIn,
+  holidays,
+  attendees,
+  onOpenNewEventModal,
+  onEditEvent,
+  onRefresh,
+  initialTab = 'registrations',
 }) => {
-  const [selectedSheet, setSelectedSheet] = useState<FormSheetName>('Register-1');
-  const [attendees, setAttendees] = useState<AttendeeRow[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [searchQuery, setSearchQuery] = useState<string>('');
+  // Navigation tabs
+  const [activeTab, setActiveTab] = useState<'registrations' | 'courses' | 'holidays'>(initialTab);
+
+  React.useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
+
+  // Course selection for registrations tab
+  const onlyCourses = useMemo(() => events.filter((e) => e.isEvent), [events]);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>(() => {
+    return onlyCourses[0]?.id || 'EVT-1001';
+  });
+
+  // Selected course object
+  const activeCourse = useMemo(() => {
+    return onlyCourses.find((c) => c.id === selectedCourseId) || onlyCourses[0] || null;
+  }, [onlyCourses, selectedCourseId]);
+
+  // Attendees filtered by selected course
+  const courseAttendees = useMemo(() => {
+    if (!activeCourse) return [];
+    return attendees.filter(
+      (a) => a.courseId === activeCourse.id || (activeCourse.formSheet && a.formSheet === activeCourse.formSheet)
+    );
+  }, [attendees, activeCourse]);
+
+  // Search query in attendees
+  const [attendeeSearchQuery, setAttendeeSearchQuery] = useState('');
+  const filteredCourseAttendees = useMemo(() => {
+    if (!attendeeSearchQuery.trim()) return courseAttendees;
+    const q = attendeeSearchQuery.toLowerCase().trim();
+    return courseAttendees.filter(
+      (a) =>
+        a.fname.toLowerCase().includes(q) ||
+        a.lname.toLowerCase().includes(q) ||
+        (a.code && a.code.toLowerCase().includes(q)) ||
+        (a.dept && a.dept.toLowerCase().includes(q)) ||
+        (a.pos && a.pos.toLowerCase().includes(q)) ||
+        (a.submitterName && a.submitterName.toLowerCase().includes(q))
+    );
+  }, [courseAttendees, attendeeSearchQuery]);
+
+  // Selection for batch operations
+  const [selectedAttendeeIds, setSelectedAttendeeIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Status message alert
   const [statusMessage, setStatusMessage] = useState<{
     text: string;
     type: 'success' | 'error';
   } | null>(null);
 
-  // Selection & Deletion state
-  const [selectedAttendeeKeys, setSelectedAttendeeKeys] = useState<Set<string>>(new Set());
-  const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  // Holiday management state
+  const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
+  const [editingHoliday, setEditingHoliday] = useState<HolidayItem | null>(null);
+  const [holidaySearchQuery, setHolidaySearchQuery] = useState('');
 
-  // Sync Settings & WebApp Webhook
-  const [showSyncSettings, setShowSyncSettings] = useState(false);
-  const [webAppUrlInput, setWebAppUrlInput] = useState(getSheetsWebAppUrl());
-  const [isSavingUrl, setIsSavingUrl] = useState(false);
-  const [isTestingUrl, setIsTestingUrl] = useState(false);
-  const [isPushingSheet, setIsPushingSheet] = useState(false);
-  const [pendingCount, setPendingCount] = useState(getPendingSyncQueue().length);
-  const [isFlushing, setIsFlushing] = useState(false);
-  const [showScriptModal, setShowScriptModal] = useState(false);
-  const [copiedCode, setCopiedCode] = useState(false);
+  // Attendee edit/add modal state
+  const [isAttendeeModalOpen, setIsAttendeeModalOpen] = useState(false);
+  const [editingAttendee, setEditingAttendee] = useState<AttendeeWithMeta | null>(null);
+  const [attendeeForm, setAttendeeForm] = useState({
+    code: '',
+    sex: 'Mr.',
+    fname: '',
+    lname: '',
+    dept: '',
+    pos: '',
+    exp: '',
+    app: '',
+    rem: '',
+    submitterName: 'Admin',
+    submitterDept: 'HR / Training',
+    submitterPhone: '-',
+  });
 
-  // Load sheets configuration on mount
-  useEffect(() => {
-    initSheetsConfig().then((url) => {
-      if (url) {
-        setWebAppUrlInput(url);
-      }
+  // Toggle attendee selection
+  const toggleSelectAttendee = (id: string) => {
+    setSelectedAttendeeIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
-  }, []);
-
-  // Unique key for each attendee
-  const getAttendeeKey = (a: AttendeeRow, idx: number) => {
-    return `${a.code || 'no-code'}_${a.fname}_${a.lname}_${a.rowIndex ?? idx}`;
   };
 
-  // Reset selection when changing sheet
-  useEffect(() => {
-    setSelectedAttendeeKeys(new Set());
-  }, [selectedSheet]);
-
-  // Find linked event for currently selected sheet
-  const linkedCourse = useMemo(() => {
-    return events.find((ev) => ev.isEvent && ev.formSheet === selectedSheet);
-  }, [events, selectedSheet]);
-
-  // Load attendees for selected sheet
-  const loadSheetData = async (sheetName: FormSheetName) => {
-    setIsLoading(true);
-    setStatusMessage(null);
-    try {
-      const data = await getRegistrationAttendees(sheetName, accessToken);
-      setAttendees(data.attendees || []);
-      setSelectedAttendeeKeys(new Set());
-    } catch (err: unknown) {
-      console.error(err);
-      setStatusMessage({
-        text: 'ไม่สามารถโหลดข้อมูลจากชีตได้ กรุณาลองใหม่อีกครั้ง',
-        type: 'error',
-      });
-    } finally {
-      setIsLoading(false);
+  const toggleSelectAllAttendees = () => {
+    if (selectedAttendeeIds.size === filteredCourseAttendees.length) {
+      setSelectedAttendeeIds(new Set());
+    } else {
+      setSelectedAttendeeIds(new Set(filteredCourseAttendees.map((a) => a.id || '')));
     }
   };
 
-  useEffect(() => {
-    loadSheetData(selectedSheet);
-  }, [selectedSheet, accessToken]);
+  // Quick toggle course status
+  const handleToggleCourseStatus = async (course: TrainingEvent, newStatus: string) => {
+    try {
+      await saveEventToFirestore({
+        ...course,
+        status: newStatus,
+      });
+      setStatusMessage({
+        text: `อัปเดตสถานะหลักสูตร "${course.title}" เป็น "${newStatus}" สำเร็จ`,
+        type: 'success',
+      });
+      setTimeout(() => setStatusMessage(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setStatusMessage({ text: 'ไม่สามารถเปลี่ยนสถานะได้ กรุณาลองใหม่', type: 'error' });
+    }
+  };
 
-  // Handle Clear all data
-  const handleClearData = async () => {
+  // Batch delete selected attendees
+  const handleDeleteSelected = async () => {
+    if (selectedAttendeeIds.size === 0) return;
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบผู้ลงทะเบียนที่เลือกจำนวน ${selectedAttendeeIds.size} รายการ?`)) {
+      return;
+    }
+
+    setIsDeleting(true);
+    try {
+      const res = await deleteAttendeesFromFirestore(Array.from(selectedAttendeeIds));
+      setSelectedAttendeeIds(new Set());
+      setStatusMessage({
+        text: `ลบรายชื่อผู้ลงทะเบียนสำเร็จ ${res.count} รายการ เรียลไทม์บน Firebase`,
+        type: 'success',
+      });
+      setTimeout(() => setStatusMessage(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการลบข้อมูล', type: 'error' });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  // Clear all attendees for course
+  const handleClearCourseAttendees = async () => {
+    if (!activeCourse) return;
     if (
       !window.confirm(
-        `คำเตือน: คุณต้องการล้างข้อมูลผู้ลงทะเบียนทั้งหมดใน "${selectedSheet}" ใช่หรือไม่? (การกระทำนี้จะล้างข้อมูลแถว 5-100 ใน Google Sheets ด้วย)`
+        `คำเตือน: คุณต้องการล้างข้อมูลผู้ลงทะเบียนทั้งหมดในหลักสูตร "${activeCourse.title}" หรือไม่? (ไม่สามารถย้อนกลับได้)`
       )
     ) {
       return;
     }
 
-    setIsLoading(true);
+    setIsDeleting(true);
     try {
-      const res = await clearRegistrationSheet(selectedSheet, accessToken);
-      if (res.success) {
-        setAttendees([]);
-        setSelectedAttendeeKeys(new Set());
-        setStatusMessage({
-          text: `ล้างข้อมูลใน "${selectedSheet}" และอัปเดตส่งข้อมูลไปยัง Google Sheets เรียบร้อยแล้ว`,
-          type: 'success',
-        });
-      } else {
-        setStatusMessage({ text: res.error || 'ล้างข้อมูลไม่สำเร็จ', type: 'error' });
-      }
+      const res = await clearCourseAttendeesFromFirestore(activeCourse.id);
+      setSelectedAttendeeIds(new Set());
+      setStatusMessage({
+        text: `ล้างข้อมูลผู้ลงทะเบียนใน "${activeCourse.title}" เรียบร้อยแล้ว (${res.count} รายการ)`,
+        type: 'success',
+      });
+      setTimeout(() => setStatusMessage(null), 3000);
     } catch (err) {
       console.error(err);
       setStatusMessage({ text: 'เกิดข้อผิดพลาดในการล้างข้อมูล', type: 'error' });
     } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Handle Delete Selected Attendees
-  const handleDeleteSelected = async () => {
-    const toDelete = attendees.filter((a, idx) =>
-      selectedAttendeeKeys.has(getAttendeeKey(a, idx))
-    );
-    if (toDelete.length === 0) return;
-
-    if (
-      !window.confirm(
-        `ยืนยันการลบรายชื่อผู้ลงทะเบียนที่เลือก (${toDelete.length} คน) ออกจาก "${selectedSheet}" ใช่หรือไม่?`
-      )
-    ) {
-      return;
-    }
-
-    setIsDeleting(true);
-    try {
-      const res = await deleteRegistrationAttendees(selectedSheet, toDelete, accessToken);
-      if (res.success) {
-        const deleteKeySet = new Set(toDelete.map((a, idx) => getAttendeeKey(a, idx)));
-        setAttendees((prev) => prev.filter((a, idx) => !deleteKeySet.has(getAttendeeKey(a, idx))));
-        setSelectedAttendeeKeys(new Set());
-        setStatusMessage({
-          text: `ลบรายชื่อผู้ลงทะเบียนที่เลือกเรียบร้อยแล้ว (${toDelete.length} คน)`,
-          type: 'success',
-        });
-      } else {
-        setStatusMessage({ text: res.error || 'ลบข้อมูลไม่สำเร็จ', type: 'error' });
-      }
-    } catch (err) {
-      console.error(err);
-      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการลบข้อมูล', type: 'error' });
-    } finally {
       setIsDeleting(false);
     }
   };
 
-  // Handle Delete Single Attendee
-  const handleDeleteSingle = async (a: AttendeeRow, idx: number) => {
-    const fullName = `${a.fname} ${a.lname}`.trim() || a.code || 'รายการนี้';
-    if (
-      !window.confirm(
-        `ยืนยันการลบผู้ลงทะเบียน "${fullName}" ออกจาก "${selectedSheet}" ใช่หรือไม่?`
-      )
-    ) {
+  // Export course attendees to Excel
+  const handleExportExcel = () => {
+    if (!activeCourse) return;
+    exportAttendeesToExcel(courseAttendees, activeCourse.title, activeCourse.start);
+  };
+
+  // Save attendee (Add or Update)
+  const handleSaveAttendee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeCourse) return;
+    if (!attendeeForm.fname.trim() || !attendeeForm.lname.trim()) {
+      alert('กรุณากรอกชื่อและนามสกุล');
       return;
     }
 
-    setIsDeleting(true);
     try {
-      const res = await deleteRegistrationAttendees(selectedSheet, [a], accessToken);
-      if (res.success) {
-        const key = getAttendeeKey(a, idx);
-        setSelectedAttendeeKeys((prev) => {
-          const next = new Set(prev);
-          next.delete(key);
-          return next;
+      if (editingAttendee && editingAttendee.id) {
+        await updateAttendeeInFirestore(editingAttendee.id, {
+          code: attendeeForm.code.trim(),
+          sex: attendeeForm.sex as any,
+          fname: attendeeForm.fname.trim(),
+          lname: attendeeForm.lname.trim(),
+          dept: attendeeForm.dept.trim(),
+          pos: attendeeForm.pos.trim(),
+          exp: attendeeForm.exp.trim(),
+          app: attendeeForm.app.trim(),
+          rem: attendeeForm.rem.trim(),
+          submitterName: attendeeForm.submitterName.trim(),
+          submitterDept: attendeeForm.submitterDept.trim(),
+          submitterPhone: attendeeForm.submitterPhone.trim(),
         });
-        setAttendees((prev) => prev.filter((item, i) => getAttendeeKey(item, i) !== key));
-        setStatusMessage({
-          text: `ลบผู้ลงทะเบียน "${fullName}" เรียบร้อยแล้ว`,
-          type: 'success',
-        });
+        setStatusMessage({ text: 'แก้ไขข้อมูลผู้ลงทะเบียนสำเร็จ', type: 'success' });
       } else {
-        setStatusMessage({ text: res.error || 'ลบข้อมูลไม่สำเร็จ', type: 'error' });
-      }
-    } catch (err) {
-      console.error(err);
-      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการลบข้อมูล', type: 'error' });
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  // Filter attendees by search
-  const filteredAttendees = useMemo(() => {
-    if (!searchQuery.trim()) return attendees;
-    const q = searchQuery.toLowerCase();
-    return attendees.filter(
-      (a) =>
-        a.fname.toLowerCase().includes(q) ||
-        a.lname.toLowerCase().includes(q) ||
-        a.code.toLowerCase().includes(q) ||
-        a.dept.toLowerCase().includes(q) ||
-        a.pos.toLowerCase().includes(q) ||
-        (a.submitterName && a.submitterName.toLowerCase().includes(q))
-    );
-  }, [attendees, searchQuery]);
-
-  // Department breakdown stats
-  const deptStats = useMemo(() => {
-    const counts: Record<string, number> = {};
-    attendees.forEach((a) => {
-      const d = a.dept || 'ไม่ระบุ';
-      counts[d] = (counts[d] || 0) + 1;
-    });
-    return Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  }, [attendees]);
-
-  const handleSaveWebAppUrl = async () => {
-    if (!webAppUrlInput.trim()) {
-      setStatusMessage({ text: 'กรุณากรอก Web App URL ที่ได้จาก Google Apps Script', type: 'error' });
-      return;
-    }
-    setIsSavingUrl(true);
-    try {
-      await setSheetsWebAppUrl(webAppUrlInput);
-      setStatusMessage({
-        text: 'บันทึก Google Apps Script Web App URL และซิงค์การตั้งค่าเรียบร้อยแล้ว ทุกคนส่งข้อมูลลงชีตได้ทันที',
-        type: 'success',
-      });
-    } catch {
-      setStatusMessage({ text: 'บันทึก URL ไม่สำเร็จ', type: 'error' });
-    } finally {
-      setIsSavingUrl(false);
-    }
-  };
-
-  const handleTestWebAppUrl = async () => {
-    setIsTestingUrl(true);
-    try {
-      const res = await testSheetsWebApp(webAppUrlInput);
-      setStatusMessage({
-        text: res.message,
-        type: res.success ? 'success' : 'error',
-      });
-    } catch (e) {
-      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการทดสอบ: ' + (e as Error).message, type: 'error' });
-    } finally {
-      setIsTestingUrl(false);
-    }
-  };
-
-  const handleForcePushSheet = async () => {
-    if (
-      !window.confirm(
-        `ต้องการส่งข้อมูลผู้ลงทะเบียน ${attendees.length} คน ในชีต "${selectedSheet}" ขึ้น Google Sheets (ID: ${SPREADSHEET_ID}) ทันทีใช่หรือไม่?`
-      )
-    ) {
-      return;
-    }
-    setIsPushingSheet(true);
-    try {
-      const res = await forcePushSheetToGoogleSheets(selectedSheet, accessToken);
-      if (res.success) {
-        setStatusMessage({
-          text: `ส่งข้อมูลผู้ลงทะเบียน ${res.count} คน ขึ้น Google Sheets เรียบร้อยแล้ว`,
-          type: 'success',
-        });
-      } else {
-        setStatusMessage({
-          text: res.error || 'ส่งข้อมูลไม่สำเร็จ กรุณาตรวจสอบการตั้งค่า Web App URL',
-          type: 'error',
-        });
-      }
-    } catch (e) {
-      setStatusMessage({ text: 'เกิดข้อผิดพลาด: ' + (e as Error).message, type: 'error' });
-    } finally {
-      setIsPushingSheet(false);
-    }
-  };
-
-  const handleFlushPending = async () => {
-    setIsFlushing(true);
-    try {
-      const res = await flushPendingSyncQueue(accessToken);
-      setPendingCount(getPendingSyncQueue().length);
-      setStatusMessage({
-        text: `ซิงค์ข้อมูลค้างส่งสำเร็จเรียบร้อย (${res.flushedCount} รายการ)`,
-        type: 'success',
-      });
-    } catch (e) {
-      console.error(e);
-      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการซิงค์ข้อมูล', type: 'error' });
-    } finally {
-      setIsFlushing(false);
-    }
-  };
-
-  const hasWebAppConfigured = Boolean(webAppUrlInput && webAppUrlInput.trim().startsWith('https://script.google.com'));
-
-  const appsScriptCode = `// Google Apps Script สำหรับชีต ID: 1gqp55Bp-HyDihtbHQGpyeVglHAXCQwXTxnefK8xVozs
-// รองรับการทำงานอัตโนมัติ 100% ไม่ต้องล็อกอิน Google
-function doPost(e) {
-  try {
-    var contents = JSON.parse(e.postData.contents);
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var action = contents.action;
-
-    // 1. ลงทะเบียนผู้เข้าอบรม (เขียนเริ่มจากแถวที่ 5 คอลัมน์ A ถึง M เสมอ)
-    if (action === 'registration') {
-      var sheet = ss.getSheetByName(contents.formSheet) || ss.insertSheet(contents.formSheet);
-      
-      // นับจำนวนผู้ลงทะเบียนจริงจากคอลัมน์ B (Code) แถวที่ 5 เป็นต้นไป
-      var bValues = sheet.getRange("B5:B500").getValues();
-      var attendeeCount = 0;
-      for (var i = 0; i < bValues.length; i++) {
-        if (bValues[i][0] && String(bValues[i][0]).trim() !== "") {
-          attendeeCount++;
-        }
-      }
-      var startRow = 5 + attendeeCount;
-      
-      var rows = contents.data.map(function(d, idx) {
-        return [
-          String(attendeeCount + idx + 1), // Col A: No.
-          d[0] || '', // Col B: Code
-          d[1] || 'Mr.', // Col C: Sex
-          d[2] || '', // Col D: Name
-          d[3] || '', // Col E: Last Name
-          d[4] || '', // Col F: Dept
-          d[5] || '', // Col G: Position
-          d[6] || '', // Col H: Expectation
-          d[7] || '', // Col I: Apply
-          d[8] || '', // Col J: Remark
-          contents.submitterName || '', // Col K: ผู้ประสานงาน
-          contents.submitterDept || '', // Col L: ฝ่าย
-          contents.submitterPhone || '' // Col M: เบอร์ติดต่อ
-        ];
-      });
-
-      sheet.getRange(startRow, 1, rows.length, 13).setValues(rows);
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success', startRow: startRow, count: rows.length })).setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 2. ลบรายชื่อผู้ลงทะเบียนที่เลือก (ล้างแถว 5-500 และเขียนรายชื่อที่เหลือเริ่มจากแถวที่ 5)
-    if (action === 'delete_attendees') {
-      var sheet = ss.getSheetByName(contents.formSheet);
-      if (sheet) {
-        sheet.getRange("A5:M500").clearContent();
-        if (contents.remaining && contents.remaining.length > 0) {
-          var newRows = contents.remaining.map(function(d, idx) {
-            return [
-              String(idx + 1),
-              d.code || '',
-              d.sex || 'Mr.',
-              d.fname || '',
-              d.lname || '',
-              d.dept || '',
-              d.pos || '',
-              d.exp || '',
-              d.app || '',
-              d.rem || '',
-              d.submitterName || '',
-              d.submitterDept || '',
-              d.submitterPhone || ''
-            ];
-          });
-          sheet.getRange(5, 1, newRows.length, 13).setValues(newRows);
-        }
-      }
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 3. สั่งล้างข้อมูลทั้งหมดในชีต (เคลียร์แถว 5-500 โดยไม่แตะต้องส่วนหัว 4 แถวแรก)
-    if (action === 'clear_sheet') {
-      var sheet = ss.getSheetByName(contents.formSheet);
-      if (sheet) {
-        sheet.getRange("A5:M500").clearContent();
-      }
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 4. บันทึก / แก้ไขหลักสูตรใน Master
-    if (action === 'save_event') {
-      var master = ss.getSheetByName('Master');
-      if (master) {
-        var ev = contents.event;
-        var row = [ev.id, ev.category, ev.title, ev.start, ev.end, ev.startTime, ev.endTime, ev.location, ev.description, ev.color, ev.status, ev.openDate, ev.closeDate, ev.formSheet];
-        var data = master.getDataRange().getValues();
-        var foundRow = -1;
-        for (var i = 1; i < data.length; i++) {
-          if (data[i][0] === ev.id) { foundRow = i + 1; break; }
-        }
-        if (foundRow > 0) {
-          master.getRange(foundRow, 1, 1, row.length).setValues([row]);
-        } else {
-          master.appendRow(row);
-        }
-      }
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
-    }
-
-    // 5. ลบหลักสูตรจาก Master
-    if (action === 'delete_event') {
-      var master = ss.getSheetByName('Master');
-      if (master) {
-        var data = master.getDataRange().getValues();
-        for (var i = 1; i < data.length; i++) {
-          if (data[i][0] === contents.eventId) {
-            master.getRange(i + 1, 1, 1, 14).clearContent();
-            break;
+        await addAttendeesToFirestore(
+          activeCourse,
+          [
+            {
+              code: attendeeForm.code.trim(),
+              sex: attendeeForm.sex as any,
+              fname: attendeeForm.fname.trim(),
+              lname: attendeeForm.lname.trim(),
+              dept: attendeeForm.dept.trim(),
+              pos: attendeeForm.pos.trim(),
+              exp: attendeeForm.exp.trim(),
+              app: attendeeForm.app.trim(),
+              rem: attendeeForm.rem.trim(),
+            },
+          ],
+          {
+            name: attendeeForm.submitterName.trim(),
+            dept: attendeeForm.submitterDept.trim(),
+            phone: attendeeForm.submitterPhone.trim(),
           }
-        }
+        );
+        setStatusMessage({ text: 'เพิ่มผู้ลงทะเบียนใหม่สำเร็จ', type: 'success' });
       }
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success' })).setMimeType(ContentService.MimeType.JSON);
+      setIsAttendeeModalOpen(false);
+      setEditingAttendee(null);
+      setTimeout(() => setStatusMessage(null), 3000);
+    } catch (err) {
+      console.error(err);
+      alert('ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่');
     }
+  };
 
-    // 6. ทดสอบการเชื่อมต่อ (Ping)
-    if (action === 'test') {
-      return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'เชื่อมต่อ Google Sheets สำเร็จ' })).setMimeType(ContentService.MimeType.JSON);
+  // Save Holiday (Add or Update)
+  const handleSaveHoliday = async (data: Partial<HolidayItem> & { date: string; name: string }) => {
+    await saveHolidayToFirestore(data);
+    setStatusMessage({
+      text: `บันทึกข้อมูลวันหยุด "${data.name}" เรียบร้อยแล้ว (อัปเดตบนปฏิทินทันที)`,
+      type: 'success',
+    });
+    setTimeout(() => setStatusMessage(null), 3000);
+  };
+
+  // Delete Holiday
+  const handleDeleteHoliday = async (id: string, name: string) => {
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบวันหยุด "${name}" ออกจากระบบ?`)) return;
+    try {
+      await deleteHolidayFromFirestore(id);
+      setStatusMessage({ text: `ลบวันหยุด "${name}" เรียบร้อยแล้ว`, type: 'success' });
+      setTimeout(() => setStatusMessage(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการลบวันหยุด', type: 'error' });
     }
+  };
 
-    return ContentService.createTextOutput(JSON.stringify({ status: 'ok' })).setMimeType(ContentService.MimeType.JSON);
-  } catch (err) {
-    return ContentService.createTextOutput(JSON.stringify({ error: err.toString() })).setMimeType(ContentService.MimeType.JSON);
-  }
-}`;
+  // Delete Course
+  const handleDeleteCourse = async (courseId: string, title: string) => {
+    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบหลักสูตร "${title}" ออกจากระบบ?`)) return;
+    try {
+      await deleteEventFromFirestore(courseId);
+      setStatusMessage({ text: `ลบหลักสูตร "${title}" เรียบร้อยแล้ว`, type: 'success' });
+      setTimeout(() => setStatusMessage(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการลบหลักสูตร', type: 'error' });
+    }
+  };
+
+  // Filter holidays
+  const filteredHolidays = useMemo(() => {
+    if (!holidaySearchQuery.trim()) return holidays;
+    const q = holidaySearchQuery.toLowerCase().trim();
+    return holidays.filter(
+      (h) => h.name.toLowerCase().includes(q) || h.date.includes(q) || (h.category && h.category.toLowerCase().includes(q))
+    );
+  }, [holidays, holidaySearchQuery]);
 
   return (
-    <div className="flex-1 h-full neu-card rounded-2xl p-4 md:p-5 flex flex-col min-w-0 overflow-hidden">
-      {/* 1. Google Sheets Live Status & Integration Bar */}
-      <div className="mb-3 py-2 px-3.5 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-center justify-between text-xs shrink-0 flex-wrap gap-2">
-        <div className="flex items-center gap-2.5 flex-wrap min-w-0">
-          <div className="flex items-center gap-2 font-bold text-slate-800 shrink-0">
-            <span
-              className={`w-2.5 h-2.5 rounded-full ${
-                hasWebAppConfigured || accessToken ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-              } shadow-xs`}
-            ></span>
-            <Database className="w-3.5 h-3.5 text-[#1e3a8a]" />
-            <span>
-              {hasWebAppConfigured
-                ? 'Google Sheets Auto-Sync: เชื่อมต่อ Webhook แล้ว (ส่งและลบข้อมูลลงชีตจริงอัตโนมัติ)'
-                : accessToken
-                ? 'Google Sheets: เชื่อมต่อด้วยบัญชี Google แล้ว'
-                : 'Google Sheets: โหมดอ่านสด (ต้องระบุ Webhook เพื่อเปิดส่งข้อมูลเข้าชีตอัตโนมัติ)'}
-            </span>
+    <div className="flex-1 h-full neu-card rounded-2xl p-3 sm:p-4 md:p-6 flex flex-col min-w-0 overflow-hidden">
+      {/* Top Banner: Firebase Real-time Cloud Indicator & Global Stats */}
+      <div className="bg-gradient-to-r from-slate-900 via-[#1e3a8a] to-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md mb-4 shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
+            <Zap className="w-5 h-5 fill-amber-400 text-amber-400 animate-pulse" />
           </div>
-
-          {!accessToken && onGoogleSignIn && (
-            <button
-              onClick={async () => {
-                try {
-                  await onGoogleSignIn();
-                } catch (e) {
-                  console.error(e);
-                }
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
-              title="เชื่อมต่อด้วย Google OAuth สำรอง"
-            >
-              <KeyRound className="w-3 h-3 text-[#1e3a8a]" />
-              <span>เข้าสู่ระบบ Google (ทางเลือกเสริม)</span>
-            </button>
-          )}
-
-          {pendingCount > 0 && (
-            <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
-              ค้างส่งชีต: {pendingCount} รายการ
-            </span>
-          )}
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base sm:text-lg font-black tracking-tight">ระบบจัดการส่วนกลาง (Admin Center)</h2>
+              <span className="flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                Firebase Live Sync ⚡
+              </span>
+            </div>
+            <p className="text-xs text-blue-100/80 font-medium mt-0.5">
+              ฐานข้อมูลคลาวด์ Firebase Firestore อัปเดตข้อมูลตรงกันแบบเรียลไทม์ทุกอุปกรณ์
+            </p>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
-          {/* Real-time Automated Background Sync Status */}
-          <div
-            className={`flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold rounded-lg shadow-2xs ${
-              hasWebAppConfigured
-                ? 'text-emerald-800 bg-emerald-50 border border-emerald-200/80'
-                : 'text-amber-800 bg-amber-50 border border-amber-300'
+        {/* Quick Stats Pill Counters */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+          <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-center">
+            <span className="text-[10px] uppercase font-bold text-blue-200 block">หลักสูตร</span>
+            <span className="text-sm font-black text-white">{onlyCourses.length}</span>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-center">
+            <span className="text-[10px] uppercase font-bold text-emerald-200 block">เปิดรับสมัคร</span>
+            <span className="text-sm font-black text-emerald-300">
+              {onlyCourses.filter((c) => c.status === 'เปิด').length}
+            </span>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-center">
+            <span className="text-[10px] uppercase font-bold text-amber-200 block">ผู้ลงทะเบียน</span>
+            <span className="text-sm font-black text-amber-300">{attendees.length} ท่าน</span>
+          </div>
+          <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-center">
+            <span className="text-[10px] uppercase font-bold text-rose-200 block">วันหยุดประจำปี</span>
+            <span className="text-sm font-black text-rose-300">{holidays.length} วัน</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-4 shrink-0 flex-wrap gap-2">
+        <div className="flex items-center gap-1 sm:gap-2">
+          <button
+            onClick={() => setActiveTab('registrations')}
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activeTab === 'registrations'
+                ? 'bg-[#1e3a8a] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                hasWebAppConfigured ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
-              }`}
-            ></span>
-            <span>{hasWebAppConfigured ? 'Auto-Sync เปิดใช้งาน' : 'ยังไม่ได้เชื่อมต่อ Webhook'}</span>
-          </div>
-
-          {/* Force Push Button */}
-          <button
-            onClick={handleForcePushSheet}
-            disabled={isPushingSheet}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-[#1e3a8a] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg cursor-pointer transition-colors"
-            title="ส่งข้อมูลผู้ลงทะเบียนทั้งหมดในชีตนี้ขึ้น Google Sheets ทันที"
-          >
-            <Send className={`w-3 h-3 ${isPushingSheet ? 'animate-bounce' : ''}`} />
-            <span>{isPushingSheet ? 'กำลังส่ง...' : 'ส่งชีตนี้ขึ้น Google Sheets'}</span>
+            <Users className="w-4 h-4" />
+            <span>จัดการการลงทะเบียนหลักสูตร ({attendees.length})</span>
           </button>
 
-          {pendingCount > 0 && (
+          <button
+            onClick={() => setActiveTab('courses')}
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activeTab === 'courses'
+                ? 'bg-[#1e3a8a] text-white shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+            }`}
+          >
+            <BookOpen className="w-4 h-4" />
+            <span>จัดการหลักสูตรฝึกอบรม ({onlyCourses.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('holidays')}
+            className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+              activeTab === 'holidays'
+                ? 'bg-rose-600 text-white shadow-xs'
+                : 'text-slate-600 hover:text-rose-700 hover:bg-rose-50'
+            }`}
+          >
+            <Sparkles className="w-4 h-4" />
+            <span>จัดการวันหยุดประจำปี ({holidays.length})</span>
+          </button>
+        </div>
+
+        {/* Global Tab Actions */}
+        <div className="flex items-center gap-2">
+          {activeTab === 'courses' && (
             <button
-              onClick={handleFlushPending}
-              disabled={isFlushing}
-              className="flex items-center gap-1.5 px-3 py-1 text-[11px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg cursor-pointer transition-colors"
+              onClick={onOpenNewEventModal}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:shadow-xs cursor-pointer transition-all"
             >
-              <UploadCloud className={`w-3 h-3 ${isFlushing ? 'animate-bounce' : ''}`} />
-              <span>{isFlushing ? 'กำลังส่ง...' : `ส่งคิว (${pendingCount})`}</span>
+              <Plus className="w-4 h-4" />
+              <span>สร้างหลักสูตรใหม่</span>
+            </button>
+          )}
+
+          {activeTab === 'holidays' && (
+            <button
+              onClick={() => {
+                setEditingHoliday(null);
+                setIsHolidayModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:shadow-xs cursor-pointer transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              <span>เพิ่มข้อมูลวันหยุดประจำปี</span>
             </button>
           )}
 
           <button
-            onClick={() => setShowSyncSettings(!showSyncSettings)}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
-            title="ตั้งค่า Webhook และดูโค้ด Apps Script"
+            onClick={onRefresh}
+            title="รีเฟรชข้อมูล"
+            className="p-2 rounded-xl text-slate-500 hover:text-[#1e3a8a] hover:bg-slate-100 cursor-pointer"
           >
-            <Settings className="w-3 h-3 text-[#1e3a8a]" />
-            <span>{hasWebAppConfigured ? 'ตั้งค่าซิงค์' : '⚠️ เชื่อมต่อ Webhook'}</span>
+            <RefreshCw className="w-4 h-4" />
           </button>
-
-          <button
-            onClick={onRefreshEvents}
-            disabled={isSyncing}
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
-          >
-            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin text-[#1e3a8a]' : 'text-[#1e3a8a]'}`} />
-            <span className="hidden sm:inline">รีเฟรช</span>
-          </button>
-
-          <a
-            href={`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg shadow-xs transition-all"
-          >
-            <ExternalLink className="w-3 h-3 text-[#1e3a8a]" />
-            <span className="hidden sm:inline">เปิดชีต</span>
-          </a>
         </div>
       </div>
 
-      {/* Prominent Auto-Sync Setup Banner if Web App URL is NOT configured */}
-      {!hasWebAppConfigured && (
-        <div className="mb-3 p-3.5 rounded-xl border border-amber-300 bg-amber-50/90 text-xs shrink-0 shadow-xs space-y-2.5">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex items-center gap-2 text-amber-900 font-bold">
-              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>
-                ข้อมูลยังไม่ถูกส่งไปยัง Google Sheets ID: {SPREADSHEET_ID} เนื่องจากยังไม่ได้ระบุ Web App URL
-              </span>
-            </div>
-            <button
-              onClick={() => setShowScriptModal(true)}
-              className="px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] cursor-pointer shrink-0 flex items-center gap-1"
-            >
-              <Code className="w-3.5 h-3.5" />
-              <span>เปิดดูโค้ด Apps Script</span>
-            </button>
-          </div>
-
-          <p className="text-amber-800 text-[11px] leading-relaxed">
-            เพื่อให้ระบบส่งข้อมูลการลงทะเบียนและอัปเดตการลบรายชื่อเข้าชีตได้อัตโนมัติ 100% โดยที่ผู้ลงทะเบียนและแอดมินไม่ต้องกดเข้าสู่ระบบด้วย Google:
-          </p>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <input
-              type="url"
-              placeholder="วาง Google Apps Script Web App URL (https://script.google.com/macros/s/.../exec)"
-              value={webAppUrlInput}
-              onChange={(e) => setWebAppUrlInput(e.target.value)}
-              className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-xs outline-none focus:ring-2 focus:ring-[#1e3a8a]"
-            />
-            <button
-              onClick={handleSaveWebAppUrl}
-              disabled={isSavingUrl}
-              className="px-4 py-1.5 text-xs font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] rounded-lg cursor-pointer shrink-0 shadow-xs transition-colors"
-            >
-              {isSavingUrl ? 'กำลังบันทึก...' : 'บันทึกและเปิดใช้งาน Auto-Sync ทันที'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Collapsible Sync Settings Panel */}
-      {showSyncSettings && (
-        <div className="mb-3 p-3.5 rounded-xl border border-blue-200 bg-blue-50/60 text-xs shrink-0 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-slate-900 flex items-center gap-1.5">
-              <UploadCloud className="w-4 h-4 text-[#1e3a8a]" />
-              ตั้งค่า Google Apps Script Web App (ชีต ID: {SPREADSHEET_ID})
-            </span>
-            <button
-              onClick={() => setShowScriptModal(true)}
-              className="text-[#1e3a8a] font-bold hover:underline flex items-center gap-1 cursor-pointer"
-            >
-              <Code className="w-3.5 h-3.5" />
-              <span>ดูโค้ด Apps Script สำหรับชีต</span>
-            </button>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-            <input
-              type="url"
-              placeholder="Google Apps Script Web App URL (https://script.google.com/macros/s/.../exec)"
-              value={webAppUrlInput}
-              onChange={(e) => setWebAppUrlInput(e.target.value)}
-              className="flex-1 px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs outline-none focus:ring-1 focus:ring-[#1e3a8a]"
-            />
-            <button
-              onClick={handleSaveWebAppUrl}
-              disabled={isSavingUrl}
-              className="px-3.5 py-1.5 text-xs font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] rounded-lg cursor-pointer shrink-0 transition-colors"
-            >
-              {isSavingUrl ? 'กำลังบันทึก...' : 'บันทึก Webhook URL'}
-            </button>
-            <button
-              onClick={handleTestWebAppUrl}
-              disabled={isTestingUrl || !webAppUrlInput}
-              className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg cursor-pointer shrink-0 transition-colors"
-            >
-              {isTestingUrl ? 'กำลังทดสอบ...' : 'ทดสอบการเชื่อมต่อ'}
-            </button>
-          </div>
-          <p className="text-[11px] text-slate-600">
-            * ระบบทำงานแบบ Real-time Auto-Sync ตลอดเวลา เมื่อบันทึกแล้วการลงทะเบียนและการลบรายชื่อจะส่งตรงเข้าชีตทันที ผู้ใช้งานเว็บทั่วไปและแอดมินไม่ต้องกดล็อกอิน Google
-          </p>
-        </div>
-      )}
-
-
-      {/* 2. Streamlined Header: Title + Connected Course + Sheet Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 shrink-0">
-        <div className="flex items-center gap-2 flex-wrap min-w-0">
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-[#1e3a8a] text-white uppercase shrink-0">
-            Admin
-          </span>
-          <h2 className="text-sm md:text-base font-bold text-slate-900 tracking-tight shrink-0">
-            แดชบอร์ดติดตามผู้ลงทะเบียน
-          </h2>
-
-          {linkedCourse ? (
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-[#1e3a8a] bg-blue-50 border border-blue-200/70 px-2.5 py-1 rounded-lg truncate max-w-[280px]">
-              <span className="shrink-0 font-mono text-[11px]">[{selectedSheet}]</span>
-              <span className="truncate">{linkedCourse.title}</span>
-            </div>
-          ) : (
-            <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg">
-              {selectedSheet}: ยังไม่มีหลักสูตร
-            </span>
-          )}
-
-          <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-[#1e3a8a] font-mono tabular-nums shrink-0">
-            {attendees.length} คน
-          </span>
-        </div>
-
-        {/* Sheet Tabs */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-xl overflow-x-auto pb-0.5 sm:pb-1 shrink-0 gap-1 border border-slate-200/70">
-          {FORM_SHEETS.map((s) => (
-            <button
-              key={s}
-              onClick={() => setSelectedSheet(s)}
-              className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer whitespace-nowrap ${
-                selectedSheet === s
-                  ? 'bg-white text-[#1e3a8a] shadow-2xs border border-slate-200/80 font-bold'
-                  : 'text-slate-600 hover:text-[#1e3a8a]'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-
+      {/* Alert Status Banner */}
       {statusMessage && (
         <div
-          className={`mb-2.5 p-2.5 rounded-xl text-xs font-semibold shrink-0 border ${
+          className={`p-3 mb-3 rounded-xl text-xs font-bold flex items-center justify-between shrink-0 shadow-xs ${
             statusMessage.type === 'success'
-              ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
-              : 'text-rose-700 bg-rose-50 border-rose-200'
+              ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              : 'bg-rose-50 text-rose-800 border border-rose-200'
           }`}
         >
-          {statusMessage.text}
+          <span>{statusMessage.text}</span>
+          <button onClick={() => setStatusMessage(null)} className="text-slate-400 hover:text-slate-700">
+            ×
+          </button>
         </div>
       )}
 
-      {/* 3. Compact Search & Action Toolbar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-2.5 mb-3 shrink-0">
-        {/* Search */}
-        <div className="relative w-full sm:w-64">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            placeholder="ค้นหาชื่อ, รหัส, แผนก..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs font-medium neu-input rounded-xl border border-slate-200 focus:ring-2 focus:ring-[#1e3a8a]/20 focus:border-[#1e3a8a]"
-          />
-        </div>
-
-        {/* Action Buttons: Export Excel / Delete Selected / Clear */}
-        <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap">
-          <button
-            onClick={() => loadSheetData(selectedSheet)}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-colors"
-          >
-            <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin text-[#1e3a8a]' : 'text-[#1e3a8a]'}`} />
-            <span>รีเฟรช</span>
-          </button>
-
-          <button
-            onClick={() =>
-              exportAttendeesToExcel(
-                attendees,
-                linkedCourse ? linkedCourse.title : selectedSheet,
-                selectedSheet
-              )
-            }
-            disabled={attendees.length === 0}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#1e3a8a] bg-blue-50/70 hover:bg-blue-100 border border-blue-200/70 rounded-lg disabled:opacity-40 cursor-pointer transition-colors"
-          >
-            <Download className="w-3.5 h-3.5 text-[#1e3a8a]" />
-            <span>Excel (.xlsx)</span>
-          </button>
-
-          {/* Delete Selected Attendees Button */}
-          {selectedAttendeeKeys.size > 0 && (
-            <button
-              onClick={handleDeleteSelected}
-              disabled={isDeleting || isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 border border-rose-700 rounded-lg shadow-xs cursor-pointer transition-all animate-in fade-in duration-150"
-              title={`ลบผู้ลงทะเบียนที่เลือก (${selectedAttendeeKeys.size} คน)`}
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>{isDeleting ? 'กำลังลบ...' : `ลบที่เลือก (${selectedAttendeeKeys.size})`}</span>
-            </button>
-          )}
-
-          <button
-            onClick={handleClearData}
-            disabled={attendees.length === 0 || isLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-600 bg-rose-50/70 hover:bg-rose-100 border border-rose-200 rounded-lg disabled:opacity-40 cursor-pointer transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>ล้างทั้งหมด</span>
-          </button>
-        </div>
-      </div>
-
-      {/* 4. Large Attendees Table */}
-      <div className="flex-1 min-h-0 overflow-auto border border-slate-200/80 rounded-xl bg-white shadow-2xs">
-        <table className="w-full text-left text-xs min-w-[1240px]">
-          <thead className="sticky top-0 z-10 text-[11px] font-bold text-slate-700 uppercase bg-slate-50 border-b border-slate-200">
-            <tr>
-              <th className="py-2.5 px-2.5 text-center w-10">
-                <input
-                  type="checkbox"
-                  checked={
-                    filteredAttendees.length > 0 &&
-                    filteredAttendees.every((a, idx) =>
-                      selectedAttendeeKeys.has(getAttendeeKey(a, idx))
-                    )
-                  }
-                  onChange={() => {
-                    const isAll =
-                      filteredAttendees.length > 0 &&
-                      filteredAttendees.every((a, idx) =>
-                        selectedAttendeeKeys.has(getAttendeeKey(a, idx))
-                      );
-                    if (isAll) {
-                      setSelectedAttendeeKeys(new Set());
-                    } else {
-                      const next = new Set<string>();
-                      filteredAttendees.forEach((a, idx) =>
-                        next.add(getAttendeeKey(a, idx))
-                      );
-                      setSelectedAttendeeKeys(next);
-                    }
+      {/* ========================================================= */}
+      {/* TAB 1: REGISTRATIONS MANAGEMENT */}
+      {/* ========================================================= */}
+      {activeTab === 'registrations' && (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Course Selector & Controls */}
+          <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200/80 mb-3 shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <label className="text-xs font-bold text-slate-700 whitespace-nowrap">เลือกหลักสูตร:</label>
+              <div className="relative flex-1 max-w-md">
+                <select
+                  value={selectedCourseId}
+                  onChange={(e) => {
+                    setSelectedCourseId(e.target.value);
+                    setSelectedAttendeeIds(new Set());
                   }}
-                  className="w-4 h-4 rounded text-[#1e3a8a] accent-[#1e3a8a] cursor-pointer"
-                  title="เลือกทั้งหมด"
-                />
-              </th>
-              <th className="py-2.5 px-3 text-center w-12">#</th>
-              <th className="py-2.5 px-3 w-28">Code</th>
-              <th className="py-2.5 px-3 w-20">Sex</th>
-              <th className="py-2.5 px-3 w-36">ชื่อ (Name)</th>
-              <th className="py-2.5 px-3 w-36">นามสกุล (Last Name)</th>
-              <th className="py-2.5 px-3 w-40">แผนก (Department)</th>
-              <th className="py-2.5 px-3 w-32">ตำแหน่ง</th>
-              <th className="py-2.5 px-3">ความคาดหวัง (Expectation)</th>
-              <th className="py-2.5 px-3">การปรับใช้ (Application)</th>
-              <th className="py-2.5 px-3 w-28">หมายเหตุ (Remark)</th>
-              <th className="py-2.5 px-3 w-44">ผู้ประสานงาน (Submitter)</th>
-              <th className="py-2.5 px-2.5 text-center w-16">จัดการ</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredAttendees.length === 0 ? (
-              <tr>
-                <td colSpan={13} className="text-center py-16 text-slate-400">
-                  <Users className="w-10 h-10 mx-auto mb-2 opacity-30 text-[#1e3a8a]" />
-                  <p className="font-semibold text-xs text-slate-600">ยังไม่มีข้อมูลผู้ลงทะเบียนในฟอร์มชีตนี้</p>
-                </td>
-              </tr>
-            ) : (
-              filteredAttendees.map((a, idx) => {
-                const key = getAttendeeKey(a, idx);
-                const isSelected = selectedAttendeeKeys.has(key);
+                  className="w-full pl-3 pr-8 py-2 text-xs font-bold bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] focus:ring-1 focus:ring-[#1e3a8a]/20 outline-none appearance-none cursor-pointer truncate"
+                >
+                  {onlyCourses.map((c) => {
+                    const count = attendees.filter(
+                      (a) => a.courseId === c.id || (c.formSheet && a.formSheet === c.formSheet)
+                    ).length;
+                    return (
+                      <option key={c.id} value={c.id}>
+                        {c.title} ({c.start}) — ลงทะเบียนแล้ว {count} ท่าน [{c.status}]
+                      </option>
+                    );
+                  })}
+                </select>
+                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
 
-                return (
-                  <tr
-                    key={key}
-                    className={`transition-colors ${
-                      isSelected
-                        ? 'bg-blue-50/80 hover:bg-blue-100/70 border-l-3 border-[#1e3a8a]'
-                        : 'hover:bg-slate-50/80'
+              {activeCourse && (
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span
+                    className={`text-[11px] font-extrabold px-2.5 py-1 rounded-lg border ${
+                      activeCourse.status === 'เปิด'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                        : activeCourse.status === 'ปิด'
+                        ? 'bg-rose-50 text-rose-700 border-rose-300'
+                        : 'bg-slate-100 text-slate-600 border-slate-300'
                     }`}
                   >
-                    <td className="py-2 px-2.5 text-center">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => {
-                          setSelectedAttendeeKeys((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(key)) {
-                              next.delete(key);
-                            } else {
-                              next.add(key);
-                            }
-                            return next;
-                          });
-                        }}
-                        className="w-4 h-4 rounded text-[#1e3a8a] accent-[#1e3a8a] cursor-pointer"
-                      />
-                    </td>
-                    <td className="py-2 px-3 text-center font-medium text-slate-400 tabular-nums">
-                      {idx + 1}
-                    </td>
-                    <td className="py-2 px-3 font-mono font-semibold text-[#1e3a8a] tabular-nums">
-                      {a.code}
-                    </td>
-                    <td className="py-2 px-3 text-slate-600">{a.sex}</td>
-                    <td className="py-2 px-3 font-semibold text-slate-900">{a.fname}</td>
-                    <td className="py-2 px-3 font-semibold text-slate-900">{a.lname}</td>
-                    <td className="py-2 px-3 text-slate-700">
-                      <span className="bg-slate-100 border border-slate-200/80 px-2 py-0.5 rounded-md text-[11px] font-medium inline-block">
-                        {a.dept}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-slate-600">{a.pos}</td>
-                    <td className="py-2 px-3 text-slate-600 max-w-[180px] truncate" title={a.exp}>
-                      {a.exp}
-                    </td>
-                    <td className="py-2 px-3 text-slate-600 max-w-[180px] truncate" title={a.app}>
-                      {a.app}
-                    </td>
-                    <td className="py-2 px-3 text-slate-500 max-w-[120px] truncate" title={a.rem}>
-                      {a.rem || '-'}
-                    </td>
-                    <td className="py-2 px-3 text-slate-600 text-[11px]">
-                      <div className="font-semibold text-slate-900">{a.submitterName || '-'}</div>
-                      <div className="text-[10px] text-slate-500">
-                        {a.submitterDept ? `${a.submitterDept} ` : ''}
-                        {a.submitterPhone ? `(${a.submitterPhone})` : ''}
-                      </div>
-                    </td>
-                    <td className="py-2 px-2.5 text-center">
-                      <button
-                        onClick={() => handleDeleteSingle(a, idx)}
-                        disabled={isDeleting}
-                        title="ลบรายชื่อผู้ลงทะเบียนนี้"
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer disabled:opacity-40"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                    สถานะ: {activeCourse.status}
+                  </span>
+                  <button
+                    onClick={() =>
+                      handleToggleCourseStatus(
+                        activeCourse,
+                        activeCourse.status === 'เปิด' ? 'ปิด' : 'เปิด'
+                      )
+                    }
+                    className="text-[11px] font-bold text-[#1e3a8a] hover:underline cursor-pointer px-2 py-1 bg-white rounded-lg border border-slate-200"
+                  >
+                    {activeCourse.status === 'เปิด' ? 'คลิกเพื่อปิดรับ' : 'คลิกเพื่อเปิดรับ'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Course Action Buttons */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => {
+                  setEditingAttendee(null);
+                  setAttendeeForm({
+                    code: '',
+                    sex: 'Mr.',
+                    fname: '',
+                    lname: '',
+                    dept: '',
+                    pos: '',
+                    exp: '',
+                    app: '',
+                    rem: '',
+                    submitterName: 'Admin',
+                    submitterDept: 'HR / Training',
+                    submitterPhone: '-',
+                  });
+                  setIsAttendeeModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs cursor-pointer transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>เพิ่มผู้เข้าอบรม</span>
+              </button>
+
+              <button
+                onClick={handleExportExcel}
+                disabled={courseAttendees.length === 0}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#1e3a8a] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl cursor-pointer transition-all disabled:opacity-40"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>ส่งออก Excel</span>
+              </button>
+
+              {selectedAttendeeIds.size > 0 && (
+                <button
+                  onClick={handleDeleteSelected}
+                  disabled={isDeleting}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs cursor-pointer transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>ลบที่เลือก ({selectedAttendeeIds.size})</span>
+                </button>
+              )}
+
+              <button
+                onClick={handleClearCourseAttendees}
+                disabled={courseAttendees.length === 0 || isDeleting}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer disabled:opacity-40"
+                title="ล้างข้อมูลผู้ลงทะเบียนทั้งหมดของหลักสูตรนี้"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>ล้างทั้งหมด</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search Filter for Attendees */}
+          <div className="flex items-center justify-between gap-3 mb-2 shrink-0">
+            <div className="relative w-full sm:w-72">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="ค้นหาชื่อ, รหัสพนักงาน, แผนก..."
+                value={attendeeSearchQuery}
+                onChange={(e) => setAttendeeSearchQuery(e.target.value)}
+                className="w-full pl-8.5 pr-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+              />
+            </div>
+            <div className="text-xs text-slate-500 font-semibold">
+              แสดง {filteredCourseAttendees.length} จาก {courseAttendees.length} ท่าน
+            </div>
+          </div>
+
+          {/* Attendees Table */}
+          <div className="flex-1 overflow-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider select-none">
+                <tr>
+                  <th className="p-2.5 text-center w-10">
+                    <button
+                      type="button"
+                      onClick={toggleSelectAllAttendees}
+                      className="cursor-pointer text-slate-500 hover:text-[#1e3a8a]"
+                    >
+                      {selectedAttendeeIds.size > 0 &&
+                      selectedAttendeeIds.size === filteredCourseAttendees.length ? (
+                        <CheckSquare className="w-4 h-4 text-[#1e3a8a]" />
+                      ) : (
+                        <Square className="w-4 h-4" />
+                      )}
+                    </button>
+                  </th>
+                  <th className="p-2.5 text-center w-12">ลำดับ</th>
+                  <th className="p-2.5 w-24">รหัสพนักงาน</th>
+                  <th className="p-2.5 w-16 text-center">คำนำหน้า</th>
+                  <th className="p-2.5 min-w-[140px]">ชื่อ - นามสกุล</th>
+                  <th className="p-2.5 w-28">แผนก / ฝ่าย</th>
+                  <th className="p-2.5 w-28">ตำแหน่ง</th>
+                  <th className="p-2.5 w-20">เบอร์ต่อ/อายุงาน</th>
+                  <th className="p-2.5 w-24">ผู้อนุมัติ</th>
+                  <th className="p-2.5 min-w-[120px]">ผู้ส่งข้อมูล</th>
+                  <th className="p-2.5 w-20 text-center">การจัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredCourseAttendees.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="p-8 text-center text-slate-400 font-semibold">
+                      {attendeeSearchQuery
+                        ? 'ไม่พบข้อมูลที่ตรงกับคำค้นหา'
+                        : 'ยังไม่มีผู้ลงทะเบียนในหลักสูตรนี้'}
                     </td>
                   </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {/* 5. Department Breakdown Mini-Bar */}
-      {deptStats.length > 0 && (
-        <div className="mt-2.5 pt-2.5 border-t border-slate-100 flex items-center gap-2 overflow-x-auto text-xs shrink-0">
-          <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0">
-            สัดส่วนแผนก:
-          </span>
-          <div className="flex items-center gap-1.5 flex-nowrap">
-            {deptStats.map(([dept, count]) => (
-              <span
-                key={dept}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-medium bg-slate-100 border border-slate-200/70 text-slate-700 shrink-0"
-              >
-                <span>{dept}:</span>
-                <span className="font-bold text-[#1e3a8a] font-mono tabular-nums">{count}</span>
-              </span>
-            ))}
+                ) : (
+                  filteredCourseAttendees.map((att, idx) => {
+                    const isSelected = att.id ? selectedAttendeeIds.has(att.id) : false;
+                    return (
+                      <tr
+                        key={att.id || `idx-${idx}`}
+                        className={`hover:bg-blue-50/40 transition-colors ${
+                          isSelected ? 'bg-blue-50/70 font-semibold' : ''
+                        }`}
+                      >
+                        <td className="p-2.5 text-center">
+                          <button
+                            type="button"
+                            onClick={() => att.id && toggleSelectAttendee(att.id)}
+                            className="cursor-pointer text-slate-400 hover:text-[#1e3a8a]"
+                          >
+                            {isSelected ? (
+                              <CheckSquare className="w-4 h-4 text-[#1e3a8a]" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        </td>
+                        <td className="p-2.5 text-center font-bold text-slate-500">{idx + 1}</td>
+                        <td className="p-2.5 font-mono font-bold text-[#1e3a8a]">{att.code || '-'}</td>
+                        <td className="p-2.5 text-center font-medium text-slate-600">{att.sex || '-'}</td>
+                        <td className="p-2.5 font-bold text-slate-900">
+                          {att.fname} {att.lname}
+                        </td>
+                        <td className="p-2.5 font-medium text-slate-700">{att.dept || '-'}</td>
+                        <td className="p-2.5 font-medium text-slate-600">{att.pos || '-'}</td>
+                        <td className="p-2.5 text-slate-500">{att.exp || '-'}</td>
+                        <td className="p-2.5 text-slate-500">{att.app || '-'}</td>
+                        <td className="p-2.5 text-slate-600 text-[11px]">
+                          <div>{att.submitterName || '-'}</div>
+                          {att.submitterPhone && att.submitterPhone !== '-' && (
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1">
+                              <Phone className="w-2.5 h-2.5" />
+                              {att.submitterPhone}
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-2.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => {
+                                setEditingAttendee(att);
+                                setAttendeeForm({
+                                  code: att.code || '',
+                                  sex: att.sex || 'Mr.',
+                                  fname: att.fname || '',
+                                  lname: att.lname || '',
+                                  dept: att.dept || '',
+                                  pos: att.pos || '',
+                                  exp: att.exp || '',
+                                  app: att.app || '',
+                                  rem: att.rem || '',
+                                  submitterName: att.submitterName || 'Admin',
+                                  submitterDept: att.submitterDept || 'HR / Training',
+                                  submitterPhone: att.submitterPhone || '-',
+                                });
+                                setIsAttendeeModalOpen(true);
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-[#1e3a8a] hover:bg-blue-50 cursor-pointer"
+                              title="แก้ไขข้อมูล"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={async () => {
+                                if (
+                                  att.id &&
+                                  window.confirm(`ลบรายชื่อคุณ "${att.fname} ${att.lname}" หรือไม่?`)
+                                ) {
+                                  await deleteAttendeesFromFirestore([att.id]);
+                                  setStatusMessage({ text: 'ลบรายชื่อสำเร็จ', type: 'success' });
+                                  setTimeout(() => setStatusMessage(null), 3000);
+                                }
+                              }}
+                              className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                              title="ลบรายชื่อ"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
-      {/* Apps Script Guide Modal */}
-      {showScriptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="rounded-2xl w-full max-w-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Code className="w-5 h-5 text-[#1e3a8a]" />
-                <h3 className="font-bold text-slate-900 text-sm">
-                  โค้ด Google Apps Script สำหรับใส่ในชีต (Webhook อัตโนมัติ)
-                </h3>
+      {/* ========================================================= */}
+      {/* TAB 2: COURSES MANAGEMENT */}
+      {/* ========================================================= */}
+      {activeTab === 'courses' && (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 overflow-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider select-none">
+                <tr>
+                  <th className="p-2.5 w-12 text-center">ลำดับ</th>
+                  <th className="p-2.5 w-36">หมวดหมู่</th>
+                  <th className="p-2.5 min-w-[200px]">ชื่อหลักสูตร</th>
+                  <th className="p-2.5 w-32">วันที่จัดอบรม</th>
+                  <th className="p-2.5 w-28">เวลา</th>
+                  <th className="p-2.5 w-32">สถานที่</th>
+                  <th className="p-2.5 w-24 text-center">ผู้ลงทะเบียน</th>
+                  <th className="p-2.5 w-28 text-center">สถานะ</th>
+                  <th className="p-2.5 w-24 text-center">การจัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {onlyCourses.map((c, idx) => {
+                  const regCount = attendees.filter(
+                    (a) => a.courseId === c.id || (c.formSheet && a.formSheet === c.formSheet)
+                  ).length;
+                  return (
+                    <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="p-2.5 text-center font-bold text-slate-500">{idx + 1}</td>
+                      <td className="p-2.5">
+                        <span
+                          className="px-2 py-0.5 rounded text-[10px] font-bold border border-black/5 inline-block"
+                          style={{ backgroundColor: c.color, color: c.textColor || '#0f172a' }}
+                        >
+                          {c.category}
+                        </span>
+                      </td>
+                      <td className="p-2.5 font-bold text-slate-900">
+                        <div>{c.title}</div>
+                        {c.description && (
+                          <div className="text-[11px] text-slate-500 line-clamp-1 font-normal">
+                            {c.description}
+                          </div>
+                        )}
+                      </td>
+                      <td className="p-2.5 font-semibold text-slate-700 whitespace-nowrap">
+                        {c.start} {c.end && c.end !== c.start ? ` ถึง ${c.end}` : ''}
+                      </td>
+                      <td className="p-2.5 text-slate-600 whitespace-nowrap">
+                        {c.startTime} - {c.endTime}
+                      </td>
+                      <td className="p-2.5 text-slate-600 truncate max-w-[130px]">{c.location || '-'}</td>
+                      <td className="p-2.5 text-center">
+                        <span className="font-bold text-[#1e3a8a] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                          {regCount} ท่าน
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <button
+                          onClick={() => {
+                            const nextStatus =
+                              c.status === 'เปิด' ? 'ปิด' : c.status === 'ปิด' ? 'ไม่ต้องลงทะเบียน' : 'เปิด';
+                            handleToggleCourseStatus(c, nextStatus);
+                          }}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold cursor-pointer border transition-all ${
+                            c.status === 'เปิด'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100'
+                              : c.status === 'ปิด'
+                              ? 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                              : 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
+                          }`}
+                          title="คลิกเพื่อเปลี่ยนสถานะ"
+                        >
+                          {c.status}
+                        </button>
+                      </td>
+                      <td className="p-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => onEditEvent(c)}
+                            className="p-1 rounded text-slate-400 hover:text-[#1e3a8a] hover:bg-blue-50 cursor-pointer"
+                            title="แก้ไขหลักสูตร"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCourse(c.id, c.title)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                            title="ลบหลักสูตร"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 3: ANNUAL HOLIDAYS MANAGEMENT (NEW) */}
+      {/* ========================================================= */}
+      {activeTab === 'holidays' && (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Header Action Bar for Holidays */}
+          <div className="bg-rose-50/70 p-3 sm:p-4 rounded-2xl border border-rose-200/80 mb-3 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-xs">
+                <Sparkles className="w-4 h-4" />
               </div>
-              <button
-                onClick={() => setShowScriptModal(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 cursor-pointer"
-              >
-                ✕
-              </button>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-900">
+                  ฐานข้อมูลวันหยุดประจำปี (Annual Holidays)
+                </h3>
+                <p className="text-[11px] text-slate-600 font-medium">
+                  วันหยุดจะถูกไฮไลท์บนปฏิทินแบบเรียลไทม์ และซิงค์ไปยังผู้ใช้งานทุกคน
+                </p>
+              </div>
             </div>
 
-            <div className="p-4 overflow-y-auto space-y-3 text-xs text-slate-700">
-              <ol className="list-decimal list-inside space-y-1 font-medium text-slate-800">
-                <li>เปิด Google Sheet ของท่าน: <a href={`https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/edit`} target="_blank" rel="noreferrer" className="text-[#1e3a8a] underline font-bold">คลิกที่นี่</a></li>
-                <li>ไปที่เมนู <b>ส่วนขยาย (Extensions)</b> &gt; <b>Apps Script</b></li>
-                <li>วางโค้ดด้านล่างนี้ลงไปแทนที่ของเดิม</li>
-                <li>กด <b>ทำให้ใช้งานได้ (Deploy)</b> &gt; <b>การทำให้ใช้งานได้รายการใหม่ (New deployment)</b></li>
-                <li>เลือกประเภท <b>เว็บแอป (Web app)</b>, ตั้งค่า <i>เข้าถึงได้โดย (Who has access)</i>: <b>ทุกคน (Anyone)</b></li>
-                <li>คัดลอก URL เว็บแอปที่ได้ มาใส่ในช่อง "ตั้งค่าซิงค์" ของแดชบอร์ดนี้</li>
-              </ol>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-60">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="ค้นหาชื่อวันหยุด หรือวันที่..."
+                  value={holidaySearchQuery}
+                  onChange={(e) => setHolidaySearchQuery(e.target.value)}
+                  className="w-full pl-8.5 pr-3 py-1.5 text-xs font-medium bg-white border border-rose-200 rounded-lg outline-none focus:border-rose-500"
+                />
+              </div>
 
-              <div className="relative mt-2">
-                <pre className="p-3 bg-slate-900 text-slate-100 rounded-xl font-mono text-[11px] overflow-x-auto max-h-60">
-                  {appsScriptCode}
-                </pre>
+              <button
+                onClick={() => {
+                  setEditingHoliday(null);
+                  setIsHolidayModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 rounded-xl shadow-xs cursor-pointer transition-all shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>เพิ่มวันหยุด</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Holidays Table */}
+          <div className="flex-1 overflow-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider select-none">
+                <tr>
+                  <th className="p-2.5 w-12 text-center">ลำดับ</th>
+                  <th className="p-2.5 w-32">วันที่วันหยุด</th>
+                  <th className="p-2.5 min-w-[200px]">ชื่อวันหยุด</th>
+                  <th className="p-2.5 w-40">ประเภทวันหยุด</th>
+                  <th className="p-2.5 min-w-[150px]">คำอธิบาย</th>
+                  <th className="p-2.5 w-24 text-center">การจัดการ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredHolidays.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-slate-400 font-semibold">
+                      {holidaySearchQuery ? 'ไม่พบวันหยุดที่ค้นหา' : 'ยังไม่มีข้อมูลวันหยุด'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredHolidays.map((h, idx) => (
+                    <tr key={h.id || h.date} className="hover:bg-rose-50/30 transition-colors">
+                      <td className="p-2.5 text-center font-bold text-slate-500">{idx + 1}</td>
+                      <td className="p-2.5 font-bold font-mono text-rose-700 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <Calendar className="w-3.5 h-3.5 text-rose-500" />
+                          <span>{h.date}</span>
+                        </div>
+                      </td>
+                      <td className="p-2.5 font-bold text-slate-900">
+                        <span className="text-rose-800">★</span> {h.name}
+                      </td>
+                      <td className="p-2.5">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 inline-block">
+                          {h.category || 'วันหยุดนักขัตฤกษ์'}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-slate-600">{h.description || '-'}</td>
+                      <td className="p-2.5 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button
+                            onClick={() => {
+                              setEditingHoliday(h);
+                              setIsHolidayModalOpen(true);
+                            }}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                            title="แก้ไขวันหยุด"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => h.id && handleDeleteHoliday(h.id, h.name)}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                            title="ลบวันหยุด"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Holiday Form Modal */}
+      <HolidayFormModal
+        isOpen={isHolidayModalOpen}
+        holiday={editingHoliday}
+        onClose={() => {
+          setIsHolidayModalOpen(false);
+          setEditingHoliday(null);
+        }}
+        onSave={handleSaveHoliday}
+      />
+
+      {/* Mini Attendee Edit/Add Modal */}
+      {isAttendeeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
+          <div className="rounded-2xl w-full max-w-md bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-slate-900">
+                {editingAttendee ? 'แก้ไขข้อมูลผู้เข้าอบรม' : 'เพิ่มผู้เข้าอบรมในหลักสูตร'}
+              </h3>
+              <button
+                onClick={() => setIsAttendeeModalOpen(false)}
+                className="text-slate-400 hover:text-rose-500"
+              >
+                ×
+              </button>
+            </div>
+            <form onSubmit={handleSaveAttendee} className="p-4 space-y-3 max-h-[75vh] overflow-y-auto text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">รหัสพนักงาน</label>
+                <input
+                  type="text"
+                  placeholder="เช่น 9579"
+                  value={attendeeForm.code}
+                  onChange={(e) => setAttendeeForm({ ...attendeeForm, code: e.target.value })}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">คำนำหน้า</label>
+                  <select
+                    value={attendeeForm.sex}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, sex: e.target.value })}
+                    className="w-full px-2 py-1.5 border border-slate-200 rounded-lg outline-none"
+                  >
+                    <option value="Mr.">Mr. (นาย)</option>
+                    <option value="Ms.">Ms. (น.ส.)</option>
+                    <option value="Mrs.">Mrs. (นาง)</option>
+                  </select>
+                </div>
+                <div className="col-span-2">
+                  <label className="font-bold text-slate-700 block mb-1">ชื่อ *</label>
+                  <input
+                    type="text"
+                    required
+                    value={attendeeForm.fname}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, fname: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">นามสกุล *</label>
+                <input
+                  type="text"
+                  required
+                  value={attendeeForm.lname}
+                  onChange={(e) => setAttendeeForm({ ...attendeeForm, lname: e.target.value })}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">แผนก</label>
+                  <input
+                    type="text"
+                    placeholder="เช่น ENG / PTE"
+                    value={attendeeForm.dept}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, dept: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">ตำแหน่ง</label>
+                  <input
+                    type="text"
+                    placeholder="เช่น Sr.Technician"
+                    value={attendeeForm.pos}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, pos: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">เบอร์ต่อ / อายุงาน</label>
+                  <input
+                    type="text"
+                    value={attendeeForm.exp}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, exp: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">ผู้อนุมัติ</label>
+                  <input
+                    type="text"
+                    value={attendeeForm.app}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, app: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                  />
+                </div>
+              </div>
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
                 <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(appsScriptCode);
-                    setCopiedCode(true);
-                    setTimeout(() => setCopiedCode(false), 2000);
-                  }}
-                  className="absolute right-3 top-3 px-2.5 py-1 rounded-lg text-xs font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  type="button"
+                  onClick={() => setIsAttendeeModalOpen(false)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold"
                 >
-                  {copiedCode ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedCode ? 'คัดลอกแล้ว!' : 'คัดลอกโค้ด'}</span>
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-lg bg-[#1e3a8a] text-white font-bold"
+                >
+                  บันทึก
                 </button>
               </div>
-            </div>
-
-            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
-              <button
-                onClick={() => setShowScriptModal(false)}
-                className="px-4 py-1.5 text-xs font-bold rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 cursor-pointer"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
