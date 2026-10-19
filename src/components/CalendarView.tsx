@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
-import { TrainingEvent } from '../types';
+import { TrainingEvent, Language } from '../types';
 import { Clock, ChevronDown } from 'lucide-react';
+import { translations } from '../utils/translations';
 
 interface CalendarViewProps {
   currentDate: Date;
@@ -10,6 +11,7 @@ interface CalendarViewProps {
   onSelectEvent: (event: TrainingEvent) => void;
   onAddEventOnDate: (dateStr: string) => void;
   searchQuery?: string;
+  lang?: Language;
 }
 
 export const CalendarView: React.FC<CalendarViewProps> = ({
@@ -20,7 +22,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   onSelectEvent,
   onAddEventOnDate,
   searchQuery = '',
+  lang = 'th',
 }) => {
+  const t = translations[lang] || translations.th;
+
   // Generate days for the current month calendar view (6 rows x 7 days = 42 cells)
   const calendarDays = useMemo(() => {
     const year = currentDate.getFullYear();
@@ -59,7 +64,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       days.push({
         date: d,
         dateStr: dStr,
-        dayNumber: d.getDate(),
+        dayNumber: prevMonthLastDay - i,
         isCurrentMonth: false,
         isSunday: d.getDay() === 0,
         isSaturday: d.getDay() === 6,
@@ -70,9 +75,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     // Current month days
     for (let i = 1; i <= totalDaysInMonth; i++) {
       const d = new Date(year, month, i);
-      const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-        d.getDate()
-      ).padStart(2, '0')}`;
+      const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
       days.push({
         date: d,
         dateStr: dStr,
@@ -84,12 +87,12 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
       });
     }
 
-    // Next month padding (complete grid to 42 days)
+    // Next month padding to fill grid
     const remainingDays = 42 - days.length;
     for (let i = 1; i <= remainingDays; i++) {
       const d = new Date(year, month + 1, i);
       const dStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-        d.getDate()
+        i
       ).padStart(2, '0')}`;
       days.push({
         date: d,
@@ -107,15 +110,18 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
   // Filter events by selected category and search query
   const filteredEvents = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
     return events.filter((ev) => {
+      // Holidays always show unless explicitly filtered
       if (ev.isHoliday) {
-        if (!q) return true;
+        if (!searchQuery.trim()) return true;
+        const q = searchQuery.toLowerCase();
         return ev.title.toLowerCase().includes(q);
       }
-      const matchCat = selectedCategories.includes(ev.category);
-      if (!matchCat) return false;
-      if (!q) return true;
+
+      if (!selectedCategories.includes(ev.category)) return false;
+      if (!searchQuery.trim()) return true;
+
+      const q = searchQuery.toLowerCase();
       return (
         ev.title.toLowerCase().includes(q) ||
         (ev.location && ev.location.toLowerCase().includes(q)) ||
@@ -126,13 +132,13 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
   }, [events, selectedCategories, searchQuery]);
 
   const weekHeaders = [
-    { en: 'SUN', th: 'อา.', thFull: 'อาทิตย์' },
-    { en: 'MON', th: 'จ.', thFull: 'จันทร์' },
-    { en: 'TUE', th: 'อ.', thFull: 'อังคาร' },
-    { en: 'WED', th: 'พ.', thFull: 'พุธ' },
-    { en: 'THU', th: 'พฤ.', thFull: 'พฤหัสฯ' },
-    { en: 'FRI', th: 'ศ.', thFull: 'ศุกร์' },
-    { en: 'SAT', th: 'ส.', thFull: 'เสาร์' },
+    { enShort: 'SUN', enFull: 'Sunday', thShort: 'อา.', thFull: 'อาทิตย์' },
+    { enShort: 'MON', enFull: 'Monday', thShort: 'จ.', thFull: 'จันทร์' },
+    { enShort: 'TUE', enFull: 'Tuesday', thShort: 'อ.', thFull: 'อังคาร' },
+    { enShort: 'WED', enFull: 'Wednesday', thShort: 'พ.', thFull: 'พุธ' },
+    { enShort: 'THU', enFull: 'Thursday', thShort: 'พฤ.', thFull: 'พฤหัสฯ' },
+    { enShort: 'FRI', enFull: 'Friday', thShort: 'ศ.', thFull: 'ศุกร์' },
+    { enShort: 'SAT', enFull: 'Saturday', thShort: 'ส.', thFull: 'เสาร์' },
   ];
 
   return (
@@ -145,7 +151,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
 
           return (
             <div
-              key={day.en}
+              key={day.enShort}
               className={`text-center py-1.5 sm:py-2.5 px-0.5 sm:px-1 rounded-xl transition-all flex flex-col items-center justify-center select-none shadow-[2px_2px_6px_rgba(0,0,0,0.06),-2px_-2px_6px_rgba(255,255,255,0.9)] ${
                 isSun
                   ? 'bg-gradient-to-b from-rose-50 via-rose-100/80 to-rose-50 text-rose-700 border-2 border-rose-300 ring-1 ring-rose-200/60 shadow-xs'
@@ -155,10 +161,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
               }`}
             >
               <span className={`font-black tracking-wider leading-none ${isSun ? 'text-[11px] sm:text-xs md:text-sm' : 'text-xs sm:text-sm md:text-base'}`}>
-                {day.en}
+                {day.enShort}
               </span>
               <span className="text-[10px] sm:text-[11px] font-extrabold mt-1 leading-none tracking-tight opacity-90 truncate max-w-full">
-                {isSun ? 'อา.' : <><span className="sm:hidden">{day.th}</span><span className="hidden sm:inline">{day.thFull}</span></>}
+                {lang === 'en' ? (
+                  isSun ? day.enShort : <><span className="sm:hidden">{day.enShort}</span><span className="hidden sm:inline">{day.enFull}</span></>
+                ) : (
+                  isSun ? day.thShort : <><span className="sm:hidden">{day.thShort}</span><span className="hidden sm:inline">{day.thFull}</span></>
+                )}
               </span>
             </div>
           );
@@ -223,10 +233,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   {hasMultipleCourses && (
                     <span
                       className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] md:text-[10px] font-black bg-[#1e3a8a] text-white shadow-2xs whitespace-nowrap"
-                      title="มีหลายหลักสูตร เลื่อนเมาส์ ขึ้น-ลง เพื่อดูคอร์สทั้งหมด"
+                      title={lang === 'th' ? 'มีหลายหลักสูตร เลื่อนเมาส์ ขึ้น-ลง เพื่อดูคอร์สทั้งหมด' : 'Multiple courses. Scroll to view all.'}
                     >
                       <ChevronDown className="w-2.5 h-2.5 animate-bounce" />
-                      <span>{dayEvents.length} คอร์ส</span>
+                      <span>{dayEvents.length} {t.coursesCountBadge}</span>
                     </span>
                   )}
                 </div>
@@ -234,9 +244,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 {isAdmin && (
                   <span
                     className="opacity-0 group-hover:opacity-100 text-[9px] text-[#1e3a8a] bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-bold transition-opacity cursor-pointer shrink-0"
-                    title="เพิ่มหลักสูตรในวันนี้"
+                    title={lang === 'th' ? 'เพิ่มหลักสูตรในวันนี้' : 'Add course on this day'}
                   >
-                    + เพิ่ม
+                    {t.addCourseInDay}
                   </span>
                 )}
               </div>
@@ -248,7 +258,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 onWheel={(e) => {
                   e.stopPropagation();
                 }}
-                title={hasMultipleCourses ? 'ใช้เมาส์เลื่อนขึ้น-ลง เพื่อดูหลักสูตรอื่นๆ ในวันนี้' : undefined}
+                title={hasMultipleCourses ? (lang === 'th' ? 'ใช้เมาส์เลื่อนขึ้น-ลง เพื่อดูหลักสูตรอื่นๆ ในวันนี้' : 'Scroll to view courses') : undefined}
               >
                 {dayEvents.map((ev) => {
                   if (ev.isHoliday) {
@@ -258,7 +268,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         className="text-[9px] sm:text-[10px] font-bold text-rose-600 text-center py-1 px-1.5 rounded-md border border-rose-200 bg-rose-50/90 shadow-2xs leading-tight"
                         title={ev.title}
                       >
-                        ★ {ev.title}
+                        {t.holidayStar} {ev.title}
                       </div>
                     );
                   }
@@ -282,7 +292,7 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         {isOpen && (
                           <span
                             className="w-2 h-2 rounded-full bg-[#1e3a8a] shrink-0 mt-0.5 animate-ping inline-block"
-                            title="เปิดรับลงทะเบียน"
+                            title={lang === 'th' ? 'เปิดรับลงทะเบียน' : 'Open for registration'}
                           />
                         )}
                         <span className="flex-1 tracking-tight leading-snug break-words">

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { TrainingEvent, AttendeeRow, HolidayItem } from '../types';
+import { TrainingEvent, AttendeeRow, HolidayItem, Language } from '../types';
 import {
   AttendeeWithMeta,
   saveEventToFirestore,
@@ -13,6 +13,8 @@ import {
 } from '../services/firebaseService';
 import { exportAttendeesToExcel } from '../utils/excelHelper';
 import { HolidayFormModal } from './HolidayFormModal';
+import { BatchCourseUploadModal } from './BatchCourseUploadModal';
+import { translations } from '../utils/translations';
 import {
   Users,
   Download,
@@ -35,6 +37,7 @@ import {
   Building,
   UserCheck,
   ChevronDown,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -44,7 +47,8 @@ interface AdminDashboardProps {
   onOpenNewEventModal: () => void;
   onEditEvent: (event: TrainingEvent) => void;
   onRefresh: () => void;
-  initialTab?: 'registrations' | 'courses' | 'holidays';
+  lang?: Language;
+  onOpenBatchCourseModal?: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -54,16 +58,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onOpenNewEventModal,
   onEditEvent,
   onRefresh,
-  initialTab = 'registrations',
+  lang = 'th',
+  onOpenBatchCourseModal,
 }) => {
-  // Navigation tabs
-  const [activeTab, setActiveTab] = useState<'registrations' | 'courses' | 'holidays'>(initialTab);
+  const t = translations[lang] || translations.th;
 
-  React.useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab]);
+  // Navigation tabs
+  const [activeTab, setActiveTab] = useState<'registrations' | 'courses' | 'holidays'>('registrations');
 
   // Course selection for registrations tab
   const onlyCourses = useMemo(() => events.filter((e) => e.isEvent), [events]);
@@ -96,6 +97,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         (a.code && a.code.toLowerCase().includes(q)) ||
         (a.dept && a.dept.toLowerCase().includes(q)) ||
         (a.pos && a.pos.toLowerCase().includes(q)) ||
+        (a.expectation && a.expectation.toLowerCase().includes(q)) ||
+        (a.application && a.application.toLowerCase().includes(q)) ||
+        (a.remark && a.remark.toLowerCase().includes(q)) ||
         (a.submitterName && a.submitterName.toLowerCase().includes(q))
     );
   }, [courseAttendees, attendeeSearchQuery]);
@@ -115,6 +119,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingHoliday, setEditingHoliday] = useState<HolidayItem | null>(null);
   const [holidaySearchQuery, setHolidaySearchQuery] = useState('');
 
+  // Batch course upload modal state
+  const [isBatchUploadModalOpen, setIsBatchUploadModalOpen] = useState(false);
+
   // Attendee edit/add modal state
   const [isAttendeeModalOpen, setIsAttendeeModalOpen] = useState(false);
   const [editingAttendee, setEditingAttendee] = useState<AttendeeWithMeta | null>(null);
@@ -125,9 +132,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     lname: '',
     dept: '',
     pos: '',
-    exp: '',
-    app: '',
-    rem: '',
+    expectation: '',
+    application: '',
+    remark: '',
     submitterName: 'Admin',
     submitterDept: 'HR / Training',
     submitterPhone: '-',
@@ -245,9 +252,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           lname: attendeeForm.lname.trim(),
           dept: attendeeForm.dept.trim(),
           pos: attendeeForm.pos.trim(),
-          exp: attendeeForm.exp.trim(),
-          app: attendeeForm.app.trim(),
-          rem: attendeeForm.rem.trim(),
+          expectation: attendeeForm.expectation.trim(),
+          application: attendeeForm.application.trim(),
+          remark: attendeeForm.remark.trim(),
+          exp: attendeeForm.expectation.trim(),
+          app: attendeeForm.application.trim(),
+          rem: attendeeForm.remark.trim(),
           submitterName: attendeeForm.submitterName.trim(),
           submitterDept: attendeeForm.submitterDept.trim(),
           submitterPhone: attendeeForm.submitterPhone.trim(),
@@ -264,9 +274,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               lname: attendeeForm.lname.trim(),
               dept: attendeeForm.dept.trim(),
               pos: attendeeForm.pos.trim(),
-              exp: attendeeForm.exp.trim(),
-              app: attendeeForm.app.trim(),
-              rem: attendeeForm.rem.trim(),
+              expectation: attendeeForm.expectation.trim(),
+              application: attendeeForm.application.trim(),
+              remark: attendeeForm.remark.trim(),
+              exp: attendeeForm.expectation.trim(),
+              app: attendeeForm.application.trim(),
+              rem: attendeeForm.remark.trim(),
             },
           ],
           {
@@ -275,46 +288,44 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             phone: attendeeForm.submitterPhone.trim(),
           }
         );
-        setStatusMessage({ text: 'เพิ่มผู้ลงทะเบียนใหม่สำเร็จ', type: 'success' });
+        setStatusMessage({ text: 'เพิ่มผู้เข้าอบรมในหลักสูตรสำเร็จ', type: 'success' });
       }
       setIsAttendeeModalOpen(false);
-      setEditingAttendee(null);
       setTimeout(() => setStatusMessage(null), 3000);
     } catch (err) {
       console.error(err);
-      alert('ไม่สามารถบันทึกข้อมูลได้ กรุณาลองใหม่');
+      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการบันทึกข้อมูล', type: 'error' });
     }
   };
 
-  // Save Holiday (Add or Update)
+  // Holiday handlers
   const handleSaveHoliday = async (data: Partial<HolidayItem> & { date: string; name: string }) => {
     await saveHolidayToFirestore(data);
     setStatusMessage({
-      text: `บันทึกข้อมูลวันหยุด "${data.name}" เรียบร้อยแล้ว (อัปเดตบนปฏิทินทันที)`,
+      text: `บันทึกวันหยุด "${data.name}" เรียบร้อยแล้ว (อัปเดตลงปฏิทินทันที)`,
       type: 'success',
     });
     setTimeout(() => setStatusMessage(null), 3000);
   };
 
-  // Delete Holiday
   const handleDeleteHoliday = async (id: string, name: string) => {
-    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบวันหยุด "${name}" ออกจากระบบ?`)) return;
-    try {
-      await deleteHolidayFromFirestore(id);
-      setStatusMessage({ text: `ลบวันหยุด "${name}" เรียบร้อยแล้ว`, type: 'success' });
-      setTimeout(() => setStatusMessage(null), 3000);
-    } catch (err) {
-      console.error(err);
-      setStatusMessage({ text: 'เกิดข้อผิดพลาดในการลบวันหยุด', type: 'error' });
-    }
+    if (!window.confirm(`ลบวันหยุด "${name}" หรือไม่?`)) return;
+    await deleteHolidayFromFirestore(id);
+    setStatusMessage({ text: `ลบวันหยุด "${name}" เรียบร้อยแล้ว`, type: 'success' });
+    setTimeout(() => setStatusMessage(null), 3000);
   };
 
-  // Delete Course
   const handleDeleteCourse = async (courseId: string, title: string) => {
-    if (!window.confirm(`คุณแน่ใจหรือไม่ว่าต้องการลบหลักสูตร "${title}" ออกจากระบบ?`)) return;
+    if (
+      !window.confirm(
+        `คุณแน่ใจหรือไม่ว่าต้องการลบหลักสูตร "${title}"? ข้อมูลจะถูกลบออกจาก Firebase ทันที`
+      )
+    ) {
+      return;
+    }
     try {
       await deleteEventFromFirestore(courseId);
-      setStatusMessage({ text: `ลบหลักสูตร "${title}" เรียบร้อยแล้ว`, type: 'success' });
+      setStatusMessage({ text: `ลบหลักสูตร "${title}" สำเร็จ`, type: 'success' });
       setTimeout(() => setStatusMessage(null), 3000);
     } catch (err) {
       console.error(err);
@@ -322,73 +333,77 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
-  // Filter holidays
+  // Filtered holidays
   const filteredHolidays = useMemo(() => {
     if (!holidaySearchQuery.trim()) return holidays;
-    const q = holidaySearchQuery.toLowerCase().trim();
+    const q = holidaySearchQuery.toLowerCase();
     return holidays.filter(
-      (h) => h.name.toLowerCase().includes(q) || h.date.includes(q) || (h.category && h.category.toLowerCase().includes(q))
+      (h) =>
+        h.name.toLowerCase().includes(q) ||
+        h.date.includes(q) ||
+        (h.category && h.category.toLowerCase().includes(q))
     );
   }, [holidays, holidaySearchQuery]);
 
   return (
-    <div className="flex-1 h-full neu-card rounded-2xl p-3 sm:p-4 md:p-6 flex flex-col min-w-0 overflow-hidden">
-      {/* Top Banner: Firebase Real-time Cloud Indicator & Global Stats */}
-      <div className="bg-gradient-to-r from-slate-900 via-[#1e3a8a] to-slate-900 rounded-2xl p-4 sm:p-5 text-white shadow-md mb-4 shrink-0 flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="flex-1 h-full neu-card rounded-2xl p-3 sm:p-4 md:p-5 flex flex-col min-w-0 overflow-hidden bg-white/70">
+      {/* Top Header & Sync Status */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 sm:pb-4 border-b border-slate-200/80 gap-3 shrink-0">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-amber-400 shrink-0 shadow-inner">
-            <Zap className="w-5 h-5 fill-amber-400 text-amber-400 animate-pulse" />
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#1e3a8a] to-[#0f172a] text-white flex items-center justify-center shadow-md">
+            <ShieldCheck className="w-5 h-5 text-blue-200" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base sm:text-lg font-black tracking-tight">ระบบจัดการส่วนกลาง (Admin Center)</h2>
-              <span className="flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                Firebase Live Sync ⚡
+            <div className="flex items-center gap-2 flex-wrap">
+              <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                {t.adminCenterTitle}
+              </h2>
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-300">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Firebase Live</span>
               </span>
             </div>
-            <p className="text-xs text-blue-100/80 font-medium mt-0.5">
-              ฐานข้อมูลคลาวด์ Firebase Firestore อัปเดตข้อมูลตรงกันแบบเรียลไทม์ทุกอุปกรณ์
+            <p className="text-[11px] text-slate-500 font-medium">
+              {t.adminCenterDesc}
             </p>
           </div>
         </div>
 
-        {/* Quick Stats Pill Counters */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-          <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-center">
-            <span className="text-[10px] uppercase font-bold text-blue-200 block">หลักสูตร</span>
-            <span className="text-sm font-black text-white">{onlyCourses.length}</span>
+        {/* Real-time stats badges */}
+        <div className="flex items-center gap-2 flex-wrap text-xs font-bold">
+          <div className="neu-inset-sm px-3 py-1.5 rounded-xl flex items-center gap-1.5 bg-blue-50/50">
+            <BookOpen className="w-3.5 h-3.5 text-[#1e3a8a]" />
+            <span className="text-slate-600">{t.tabCourses}:</span>
+            <span className="text-[#1e3a8a] font-extrabold">{onlyCourses.length}</span>
           </div>
-          <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-center">
-            <span className="text-[10px] uppercase font-bold text-emerald-200 block">เปิดรับสมัคร</span>
-            <span className="text-sm font-black text-emerald-300">
-              {onlyCourses.filter((c) => c.status === 'เปิด').length}
-            </span>
+
+          <div className="neu-inset-sm px-3 py-1.5 rounded-xl flex items-center gap-1.5 bg-emerald-50/50">
+            <Users className="w-3.5 h-3.5 text-emerald-600" />
+            <span className="text-slate-600">{t.tabRegistrations}:</span>
+            <span className="text-emerald-700 font-extrabold">{attendees.length}</span>
           </div>
-          <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-center">
-            <span className="text-[10px] uppercase font-bold text-amber-200 block">ผู้ลงทะเบียน</span>
-            <span className="text-sm font-black text-amber-300">{attendees.length} ท่าน</span>
-          </div>
-          <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/10 text-center">
-            <span className="text-[10px] uppercase font-bold text-rose-200 block">วันหยุดประจำปี</span>
-            <span className="text-sm font-black text-rose-300">{holidays.length} วัน</span>
+
+          <div className="neu-inset-sm px-3 py-1.5 rounded-xl flex items-center gap-1.5 bg-rose-50/50">
+            <Sparkles className="w-3.5 h-3.5 text-rose-600" />
+            <span className="text-slate-600">{t.tabHolidays}:</span>
+            <span className="text-rose-700 font-extrabold">{holidays.length}</span>
           </div>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-2 mb-4 shrink-0 flex-wrap gap-2">
-        <div className="flex items-center gap-1 sm:gap-2">
+      {/* Tabs Switcher */}
+      <div className="flex items-center justify-between py-2 sm:py-3 shrink-0 flex-wrap gap-2">
+        <div className="flex items-center gap-1.5 p-1 bg-slate-100/90 rounded-2xl border border-slate-200">
           <button
             onClick={() => setActiveTab('registrations')}
             className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeTab === 'registrations'
                 ? 'bg-[#1e3a8a] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>จัดการการลงทะเบียนหลักสูตร ({attendees.length})</span>
+            <span>{t.tabRegistrations} ({attendees.length})</span>
           </button>
 
           <button
@@ -396,11 +411,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all cursor-pointer ${
               activeTab === 'courses'
                 ? 'bg-[#1e3a8a] text-white shadow-xs'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
             }`}
           >
             <BookOpen className="w-4 h-4" />
-            <span>จัดการหลักสูตรฝึกอบรม ({onlyCourses.length})</span>
+            <span>{t.tabCourses} ({onlyCourses.length})</span>
           </button>
 
           <button
@@ -412,20 +427,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }`}
           >
             <Sparkles className="w-4 h-4" />
-            <span>จัดการวันหยุดประจำปี ({holidays.length})</span>
+            <span>{t.tabHolidays} ({holidays.length})</span>
           </button>
         </div>
 
         {/* Global Tab Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           {activeTab === 'courses' && (
-            <button
-              onClick={onOpenNewEventModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:shadow-xs cursor-pointer transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>สร้างหลักสูตรใหม่</span>
-            </button>
+            <>
+              <button
+                onClick={onOpenNewEventModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:shadow-xs cursor-pointer transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span>{t.createNewCourseBtn}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (onOpenBatchCourseModal) onOpenBatchCourseModal();
+                  else setIsBatchUploadModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 hover:shadow-xs cursor-pointer transition-all"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>{t.batchUploadCourseBtn}</span>
+              </button>
+            </>
           )}
 
           {activeTab === 'holidays' && (
@@ -437,13 +465,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:shadow-xs cursor-pointer transition-all"
             >
               <Plus className="w-4 h-4" />
-              <span>เพิ่มข้อมูลวันหยุดประจำปี</span>
+              <span>{t.addHolidayBtn}</span>
             </button>
           )}
 
           <button
             onClick={onRefresh}
-            title="รีเฟรชข้อมูล"
+            title={lang === 'th' ? 'รีเฟรชข้อมูล' : 'Refresh'}
             className="p-2 rounded-xl text-slate-500 hover:text-[#1e3a8a] hover:bg-slate-100 cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
@@ -475,7 +503,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           {/* Course Selector & Controls */}
           <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200/80 mb-3 shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div className="flex items-center gap-3 flex-1 min-w-0">
-              <label className="text-xs font-bold text-slate-700 whitespace-nowrap">เลือกหลักสูตร:</label>
+              <label className="text-xs font-bold text-slate-700 whitespace-nowrap">{t.selectCourseLabel}</label>
               <div className="relative flex-1 max-w-md">
                 <select
                   value={selectedCourseId}
@@ -491,7 +519,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     ).length;
                     return (
                       <option key={c.id} value={c.id}>
-                        {c.title} ({c.start}) — ลงทะเบียนแล้ว {count} ท่าน [{c.status}]
+                        {c.title} ({c.start}) — {count} {t.personsCountSuffix} [{c.status}]
                       </option>
                     );
                   })}
@@ -510,7 +538,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         : 'bg-slate-100 text-slate-600 border-slate-300'
                     }`}
                   >
-                    สถานะ: {activeCourse.status}
+                    {t.courseStatusBadge} {activeCourse.status}
                   </span>
                   <button
                     onClick={() =>
@@ -521,7 +549,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     }
                     className="text-[11px] font-bold text-[#1e3a8a] hover:underline cursor-pointer px-2 py-1 bg-white rounded-lg border border-slate-200"
                   >
-                    {activeCourse.status === 'เปิด' ? 'คลิกเพื่อปิดรับ' : 'คลิกเพื่อเปิดรับ'}
+                    {activeCourse.status === 'เปิด' ? t.toggleStatusToClose : t.toggleStatusToOpen}
                   </button>
                 </div>
               )}
@@ -539,9 +567,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     lname: '',
                     dept: '',
                     pos: '',
-                    exp: '',
-                    app: '',
-                    rem: '',
+                    expectation: '',
+                    application: '',
+                    remark: '',
                     submitterName: 'Admin',
                     submitterDept: 'HR / Training',
                     submitterPhone: '-',
@@ -551,7 +579,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs cursor-pointer transition-all"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>เพิ่มผู้เข้าอบรม</span>
+                <span>{t.addAttendeeManualBtn}</span>
               </button>
 
               <button
@@ -560,7 +588,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#1e3a8a] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl cursor-pointer transition-all disabled:opacity-40"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>ส่งออก Excel</span>
+                <span>{t.exportExcelBtn}</span>
               </button>
 
               {selectedAttendeeIds.size > 0 && (
@@ -570,7 +598,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs cursor-pointer transition-all"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
-                  <span>ลบที่เลือก ({selectedAttendeeIds.size})</span>
+                  <span>{t.deleteSelectedBtn} ({selectedAttendeeIds.size})</span>
                 </button>
               )}
 
@@ -581,7 +609,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 title="ล้างข้อมูลผู้ลงทะเบียนทั้งหมดของหลักสูตรนี้"
               >
                 <Trash2 className="w-3.5 h-3.5" />
-                <span>ล้างทั้งหมด</span>
+                <span>{t.clearAllCourseAttendeesBtn}</span>
               </button>
             </div>
           </div>
@@ -592,20 +620,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
-                placeholder="ค้นหาชื่อ, รหัสพนักงาน, แผนก..."
+                placeholder={t.searchAttendeePlaceholder}
                 value={attendeeSearchQuery}
                 onChange={(e) => setAttendeeSearchQuery(e.target.value)}
                 className="w-full pl-8.5 pr-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
               />
             </div>
             <div className="text-xs text-slate-500 font-semibold">
-              แสดง {filteredCourseAttendees.length} จาก {courseAttendees.length} ท่าน
+              {t.showingAttendeesCount} {filteredCourseAttendees.length} {t.fromTotal} {courseAttendees.length} {t.personsCountSuffix}
             </div>
           </div>
 
-          {/* Attendees Table */}
+          {/* Attendees Table: Full columns matching image.png exactly */}
           <div className="flex-1 overflow-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-xs min-w-[1100px]">
               <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider select-none">
                 <tr>
                   <th className="p-2.5 text-center w-10">
@@ -622,22 +650,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       )}
                     </button>
                   </th>
-                  <th className="p-2.5 text-center w-12">ลำดับ</th>
-                  <th className="p-2.5 w-24">รหัสพนักงาน</th>
-                  <th className="p-2.5 w-16 text-center">คำนำหน้า</th>
-                  <th className="p-2.5 min-w-[140px]">ชื่อ - นามสกุล</th>
-                  <th className="p-2.5 w-28">แผนก / ฝ่าย</th>
-                  <th className="p-2.5 w-28">ตำแหน่ง</th>
-                  <th className="p-2.5 w-20">เบอร์ต่อ/อายุงาน</th>
-                  <th className="p-2.5 w-24">ผู้อนุมัติ</th>
-                  <th className="p-2.5 min-w-[120px]">ผู้ส่งข้อมูล</th>
-                  <th className="p-2.5 w-20 text-center">การจัดการ</th>
+                  <th className="p-2.5 text-center w-10">{t.colIndex}</th>
+                  <th className="p-2.5 w-24">{t.colCode}</th>
+                  <th className="p-2.5 w-16 text-center">{t.colSex}</th>
+                  <th className="p-2.5 min-w-[140px]">{t.colName}</th>
+                  <th className="p-2.5 w-28">{t.colDept}</th>
+                  <th className="p-2.5 w-28">{t.colPosition}</th>
+                  <th className="p-2.5 min-w-[150px]">{t.colExpectation}</th>
+                  <th className="p-2.5 min-w-[150px]">{t.colApplication}</th>
+                  <th className="p-2.5 min-w-[110px]">{t.colRemark}</th>
+                  <th className="p-2.5 min-w-[130px]">{t.submitterSection}</th>
+                  <th className="p-2.5 w-20 text-center">{t.courseTableActions}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredCourseAttendees.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="p-8 text-center text-slate-400 font-semibold">
+                    <td colSpan={12} className="p-8 text-center text-slate-400 font-semibold">
                       {attendeeSearchQuery
                         ? 'ไม่พบข้อมูลที่ตรงกับคำค้นหา'
                         : 'ยังไม่มีผู้ลงทะเบียนในหลักสูตรนี้'}
@@ -646,6 +675,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 ) : (
                   filteredCourseAttendees.map((att, idx) => {
                     const isSelected = att.id ? selectedAttendeeIds.has(att.id) : false;
+                    const expectationVal = att.expectation || att.exp || '-';
+                    const applicationVal = att.application || att.app || '-';
+                    const remarkVal = att.remark || att.rem || '-';
+
                     return (
                       <tr
                         key={att.id || `idx-${idx}`}
@@ -674,10 +707,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </td>
                         <td className="p-2.5 font-medium text-slate-700">{att.dept || '-'}</td>
                         <td className="p-2.5 font-medium text-slate-600">{att.pos || '-'}</td>
-                        <td className="p-2.5 text-slate-500">{att.exp || '-'}</td>
-                        <td className="p-2.5 text-slate-500">{att.app || '-'}</td>
+                        <td className="p-2.5 text-slate-600 max-w-[180px] truncate" title={expectationVal}>
+                          {expectationVal}
+                        </td>
+                        <td className="p-2.5 text-slate-600 max-w-[180px] truncate" title={applicationVal}>
+                          {applicationVal}
+                        </td>
+                        <td className="p-2.5 text-slate-500 max-w-[130px] truncate" title={remarkVal}>
+                          {remarkVal}
+                        </td>
                         <td className="p-2.5 text-slate-600 text-[11px]">
-                          <div>{att.submitterName || '-'}</div>
+                          <div className="font-semibold text-slate-800">{att.submitterName || '-'}</div>
+                          {att.submitterDept && <div className="text-[10px] text-slate-400">{att.submitterDept}</div>}
                           {att.submitterPhone && att.submitterPhone !== '-' && (
                             <div className="text-[10px] text-slate-400 flex items-center gap-1">
                               <Phone className="w-2.5 h-2.5" />
@@ -697,9 +738,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   lname: att.lname || '',
                                   dept: att.dept || '',
                                   pos: att.pos || '',
-                                  exp: att.exp || '',
-                                  app: att.app || '',
-                                  rem: att.rem || '',
+                                  expectation: att.expectation || att.exp || '',
+                                  application: att.application || att.app || '',
+                                  remark: att.remark || att.rem || '',
                                   submitterName: att.submitterName || 'Admin',
                                   submitterDept: att.submitterDept || 'HR / Training',
                                   submitterPhone: att.submitterPhone || '-',
@@ -745,18 +786,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeTab === 'courses' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-xs min-w-[900px]">
               <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider select-none">
                 <tr>
-                  <th className="p-2.5 w-12 text-center">ลำดับ</th>
+                  <th className="p-2.5 w-12 text-center">{t.colIndex}</th>
                   <th className="p-2.5 w-36">หมวดหมู่</th>
                   <th className="p-2.5 min-w-[200px]">ชื่อหลักสูตร</th>
                   <th className="p-2.5 w-32">วันที่จัดอบรม</th>
                   <th className="p-2.5 w-28">เวลา</th>
                   <th className="p-2.5 w-32">สถานที่</th>
                   <th className="p-2.5 w-24 text-center">ผู้ลงทะเบียน</th>
-                  <th className="p-2.5 w-28 text-center">สถานะ</th>
-                  <th className="p-2.5 w-24 text-center">การจัดการ</th>
+                  <th className="p-2.5 w-28 text-center">{t.courseStatusBadge}</th>
+                  <th className="p-2.5 w-24 text-center">{t.courseTableActions}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -792,7 +833,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <td className="p-2.5 text-slate-600 truncate max-w-[130px]">{c.location || '-'}</td>
                       <td className="p-2.5 text-center">
                         <span className="font-bold text-[#1e3a8a] bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                          {regCount} ท่าน
+                          {regCount} {t.personsCountSuffix}
                         </span>
                       </td>
                       <td className="p-2.5 text-center">
@@ -842,7 +883,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       )}
 
       {/* ========================================================= */}
-      {/* TAB 3: ANNUAL HOLIDAYS MANAGEMENT (NEW) */}
+      {/* TAB 3: ANNUAL HOLIDAYS MANAGEMENT */}
       {/* ========================================================= */}
       {activeTab === 'holidays' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -856,8 +897,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <h3 className="text-xs sm:text-sm font-bold text-slate-900">
                   ฐานข้อมูลวันหยุดประจำปี (Annual Holidays)
                 </h3>
-                <p className="text-[11px] text-slate-600 font-medium">
-                  วันหยุดจะถูกไฮไลท์บนปฏิทินแบบเรียลไทม์ และซิงค์ไปยังผู้ใช้งานทุกคน
+                <p className="text-[11px] text-slate-500">
+                  บันทึกตรงสู่ Firebase Firestore และแสดงผลบนปฏิทินแบบเรียลไทม์
                 </p>
               </div>
             </div>
@@ -867,10 +908,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="ค้นหาชื่อวันหยุด หรือวันที่..."
+                  placeholder="ค้นหาวันหยุด..."
                   value={holidaySearchQuery}
                   onChange={(e) => setHolidaySearchQuery(e.target.value)}
-                  className="w-full pl-8.5 pr-3 py-1.5 text-xs font-medium bg-white border border-rose-200 rounded-lg outline-none focus:border-rose-500"
+                  className="w-full pl-8.5 pr-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg outline-none focus:border-rose-500"
                 />
               </div>
 
@@ -879,9 +920,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setEditingHoliday(null);
                   setIsHolidayModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 rounded-xl shadow-xs cursor-pointer transition-all shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs cursor-pointer whitespace-nowrap transition-all"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
                 <span>เพิ่มวันหยุด</span>
               </button>
             </div>
@@ -892,40 +933,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <table className="w-full text-left border-collapse text-xs">
               <thead className="bg-slate-50 sticky top-0 z-10 border-b border-slate-200 text-slate-600 font-bold uppercase text-[10px] tracking-wider select-none">
                 <tr>
-                  <th className="p-2.5 w-12 text-center">ลำดับ</th>
-                  <th className="p-2.5 w-32">วันที่วันหยุด</th>
-                  <th className="p-2.5 min-w-[200px]">ชื่อวันหยุด</th>
-                  <th className="p-2.5 w-40">ประเภทวันหยุด</th>
-                  <th className="p-2.5 min-w-[150px]">คำอธิบาย</th>
-                  <th className="p-2.5 w-24 text-center">การจัดการ</th>
+                  <th className="p-2.5 w-12 text-center">{t.colIndex}</th>
+                  <th className="p-2.5 w-32">{t.holidayDateLabel}</th>
+                  <th className="p-2.5 min-w-[200px]">{t.holidayNameLabel}</th>
+                  <th className="p-2.5 w-40">{t.holidayCategoryLabel}</th>
+                  <th className="p-2.5 min-w-[200px]">{t.holidayDescLabel}</th>
+                  <th className="p-2.5 w-24 text-center">{t.courseTableActions}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredHolidays.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="p-8 text-center text-slate-400 font-semibold">
-                      {holidaySearchQuery ? 'ไม่พบวันหยุดที่ค้นหา' : 'ยังไม่มีข้อมูลวันหยุด'}
+                      {holidaySearchQuery
+                        ? 'ไม่พบวันหยุดที่ตรงกับคำค้นหา'
+                        : 'ยังไม่มีข้อมูลวันหยุดประจำปีในระบบ'}
                     </td>
                   </tr>
                 ) : (
                   filteredHolidays.map((h, idx) => (
                     <tr key={h.id || h.date} className="hover:bg-rose-50/30 transition-colors">
                       <td className="p-2.5 text-center font-bold text-slate-500">{idx + 1}</td>
-                      <td className="p-2.5 font-bold font-mono text-rose-700 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          <Calendar className="w-3.5 h-3.5 text-rose-500" />
-                          <span>{h.date}</span>
-                        </div>
+                      <td className="p-2.5 font-mono font-bold text-rose-700 whitespace-nowrap">
+                        {h.date}
                       </td>
-                      <td className="p-2.5 font-bold text-slate-900">
-                        <span className="text-rose-800">★</span> {h.name}
-                      </td>
+                      <td className="p-2.5 font-bold text-slate-900">{h.name}</td>
                       <td className="p-2.5">
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 inline-block">
-                          {h.category || 'วันหยุดนักขัตฤกษ์'}
+                          {h.category || 'วันหยุด'}
                         </span>
                       </td>
-                      <td className="p-2.5 text-slate-600">{h.description || '-'}</td>
+                      <td className="p-2.5 text-slate-500">{h.description || '-'}</td>
                       <td className="p-2.5 text-center">
                         <div className="flex items-center justify-center gap-1">
                           <button
@@ -933,7 +971,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               setEditingHoliday(h);
                               setIsHolidayModalOpen(true);
                             }}
-                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 cursor-pointer"
+                            className="p-1 rounded text-slate-400 hover:text-[#1e3a8a] hover:bg-blue-50 cursor-pointer"
                             title="แก้ไขวันหยุด"
                           >
                             <Edit2 className="w-3.5 h-3.5" />
@@ -967,35 +1005,60 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         onSave={handleSaveHoliday}
       />
 
-      {/* Mini Attendee Edit/Add Modal */}
+      {/* Batch Course Upload Modal */}
+      <BatchCourseUploadModal
+        isOpen={isBatchUploadModalOpen}
+        lang={lang}
+        onClose={() => setIsBatchUploadModalOpen(false)}
+        onSuccess={() => {
+          onRefresh();
+          setStatusMessage({
+            text: 'นำเข้าและอัปเดตหลักสูตรทั้งหมดสำเร็จเรียบร้อยแล้ว (Firebase Live)',
+            type: 'success',
+          });
+          setTimeout(() => setStatusMessage(null), 3000);
+        }}
+      />
+
+      {/* Attendee Edit/Add Modal: All fields from image.png */}
       {isAttendeeModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-xs">
-          <div className="rounded-2xl w-full max-w-md bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col">
-            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-              <h3 className="text-sm font-bold text-slate-900">
-                {editingAttendee ? 'แก้ไขข้อมูลผู้เข้าอบรม' : 'เพิ่มผู้เข้าอบรมในหลักสูตร'}
-              </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
+          <div className="rounded-2xl w-full max-w-lg bg-white border border-slate-200 shadow-2xl overflow-hidden flex flex-col">
+            <div className="p-4 bg-gradient-to-r from-slate-50 to-blue-50/40 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  {editingAttendee ? 'แก้ไขข้อมูลผู้เข้าอบรม' : 'เพิ่มผู้เข้าอบรมในหลักสูตร'}
+                </h3>
+                <p className="text-[10px] text-slate-500 font-medium">
+                  {activeCourse?.title}
+                </p>
+              </div>
               <button
                 onClick={() => setIsAttendeeModalOpen(false)}
-                className="text-slate-400 hover:text-rose-500"
+                className="text-slate-400 hover:text-rose-500 cursor-pointer p-1"
               >
                 ×
               </button>
             </div>
-            <form onSubmit={handleSaveAttendee} className="p-4 space-y-3 max-h-[75vh] overflow-y-auto text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">รหัสพนักงาน</label>
-                <input
-                  type="text"
-                  placeholder="เช่น 9579"
-                  value={attendeeForm.code}
-                  onChange={(e) => setAttendeeForm({ ...attendeeForm, code: e.target.value })}
-                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
-                />
-              </div>
+            <form onSubmit={handleSaveAttendee} className="p-4 space-y-3 max-h-[80vh] overflow-y-auto text-xs">
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="font-bold text-slate-700 block mb-1">คำนำหน้า</label>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Code <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="เช่น 9579"
+                    value={attendeeForm.code}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, code: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Sex <span className="text-rose-500">*</span>
+                  </label>
                   <select
                     value={attendeeForm.sex}
                     onChange={(e) => setAttendeeForm({ ...attendeeForm, sex: e.target.value })}
@@ -1006,8 +1069,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     <option value="Mrs.">Mrs. (นาง)</option>
                   </select>
                 </div>
-                <div className="col-span-2">
-                  <label className="font-bold text-slate-700 block mb-1">ชื่อ *</label>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    แผนก <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="เช่น ENG / PTE"
+                    value={attendeeForm.dept}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, dept: e.target.value })}
+                    className="w-full px-2.5 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Name (ชื่อ) <span className="text-rose-500">*</span>
+                  </label>
                   <input
                     type="text"
                     required
@@ -1016,70 +1097,119 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
                   />
                 </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Last Name (นามสกุล) <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={attendeeForm.lname}
+                    onChange={(e) => setAttendeeForm({ ...attendeeForm, lname: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                  />
+                </div>
               </div>
+
               <div>
-                <label className="font-bold text-slate-700 block mb-1">นามสกุล *</label>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Position (ตำแหน่ง)
+                </label>
                 <input
                   type="text"
-                  required
-                  value={attendeeForm.lname}
-                  onChange={(e) => setAttendeeForm({ ...attendeeForm, lname: e.target.value })}
+                  placeholder="เช่น Chief Technician"
+                  value={attendeeForm.pos}
+                  onChange={(e) => setAttendeeForm({ ...attendeeForm, pos: e.target.value })}
                   className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">แผนก</label>
-                  <input
-                    type="text"
-                    placeholder="เช่น ENG / PTE"
-                    value={attendeeForm.dept}
-                    onChange={(e) => setAttendeeForm({ ...attendeeForm, dept: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">ตำแหน่ง</label>
-                  <input
-                    type="text"
-                    placeholder="เช่น Sr.Technician"
-                    value={attendeeForm.pos}
-                    onChange={(e) => setAttendeeForm({ ...attendeeForm, pos: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
-                  />
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Expectation (ความคาดหวัง)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="ความคาดหวังในการเข้ารับการอบรม..."
+                  value={attendeeForm.expectation}
+                  onChange={(e) => setAttendeeForm({ ...attendeeForm, expectation: e.target.value })}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Application (การปรับใช้)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="แนวทางการนำความรู้ไปปรับใช้กับงานจริง..."
+                  value={attendeeForm.application}
+                  onChange={(e) => setAttendeeForm({ ...attendeeForm, application: e.target.value })}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">
+                  Remark (เพิ่มเติม)
+                </label>
+                <input
+                  type="text"
+                  placeholder="หมายเหตุเพิ่มเติม หรือข้อจำกัด..."
+                  value={attendeeForm.remark}
+                  onChange={(e) => setAttendeeForm({ ...attendeeForm, remark: e.target.value })}
+                  className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
+                />
+              </div>
+
+              {/* Submitter info */}
+              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-2">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  ข้อมูลผู้ส่ง / ประสานงาน
+                </span>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-0.5 text-[10px]">ชื่อผู้ส่ง</label>
+                    <input
+                      type="text"
+                      value={attendeeForm.submitterName}
+                      onChange={(e) => setAttendeeForm({ ...attendeeForm, submitterName: e.target.value })}
+                      className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-0.5 text-[10px]">แผนกผู้ส่ง</label>
+                    <input
+                      type="text"
+                      value={attendeeForm.submitterDept}
+                      onChange={(e) => setAttendeeForm({ ...attendeeForm, submitterDept: e.target.value })}
+                      className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-bold text-slate-600 block mb-0.5 text-[10px]">เบอร์ติดต่อ</label>
+                    <input
+                      type="text"
+                      value={attendeeForm.submitterPhone}
+                      onChange={(e) => setAttendeeForm({ ...attendeeForm, submitterPhone: e.target.value })}
+                      className="w-full px-2 py-1 bg-white border border-slate-200 rounded text-xs"
+                    />
+                  </div>
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">เบอร์ต่อ / อายุงาน</label>
-                  <input
-                    type="text"
-                    value={attendeeForm.exp}
-                    onChange={(e) => setAttendeeForm({ ...attendeeForm, exp: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">ผู้อนุมัติ</label>
-                  <input
-                    type="text"
-                    value={attendeeForm.app}
-                    onChange={(e) => setAttendeeForm({ ...attendeeForm, app: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
-                  />
-                </div>
-              </div>
+
               <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsAttendeeModalOpen(false)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold"
+                  className="px-3.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 transition-colors"
                 >
-                  ยกเลิก
+                  {t.cancelBtn}
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-[#1e3a8a] text-white font-bold"
+                  className="px-5 py-1.5 rounded-lg bg-[#1e3a8a] text-white font-bold hover:bg-[#172554] transition-colors"
                 >
                   บันทึก
                 </button>

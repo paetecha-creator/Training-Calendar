@@ -37,6 +37,8 @@ export interface HolidayItem {
   description?: string;
 }
 
+export type Language = 'th' | 'en';
+
 export interface AttendeeRow {
   id?: string;
   code: string;
@@ -45,8 +47,12 @@ export interface AttendeeRow {
   lname: string;
   dept: string;
   pos: string;
-  exp: string;
-  app: string;
+  expectation?: string; // ความคาดหวัง
+  application?: string; // การปรับใช้
+  remark?: string;     // เพิ่มเติม
+  // Legacy aliases
+  exp?: string;
+  app?: string;
   rem?: string;
   submitterName?: string;
   submitterDept?: string;

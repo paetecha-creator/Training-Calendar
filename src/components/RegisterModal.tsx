@@ -1,29 +1,24 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { TrainingEvent, AttendeeRow, SessionRegistrationData } from '../types';
+import { TrainingEvent, AttendeeRow, SessionRegistrationData, Language } from '../types';
 import { generateAndDownloadTemplate, parseExcelUpload } from '../utils/excelHelper';
 import { generateReceiptNo, downloadRegistrationReceiptPdf, ReceiptInfo } from '../utils/receiptHelper';
 import { TohokuLogo } from './TohokuLogo';
-import { addAttendeesToFirestore, AttendeeWithMeta } from '../services/firebaseService';
+import { addAttendeesToFirestore } from '../services/firebaseService';
+import { translations } from '../utils/translations';
 import confetti from 'canvas-confetti';
 import {
   X,
-  Plus,
-  Trash2,
+  PlusCircle,
   Download,
   Upload,
   User,
   CheckCircle,
   AlertTriangle,
-  Printer,
   FileDown,
   Calendar,
   Clock,
   MapPin,
-  Building,
-  Phone,
-  ShieldCheck,
   CheckCircle2,
-  Sparkles,
 } from 'lucide-react';
 
 interface RegisterModalProps {
@@ -31,6 +26,7 @@ interface RegisterModalProps {
   event: TrainingEvent | null;
   initialData?: SessionRegistrationData | null;
   isAdmin?: boolean;
+  lang?: Language;
   onClose: () => void;
   onRegistrationSuccess: (sessionData: SessionRegistrationData) => void;
 }
@@ -40,9 +36,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   event,
   initialData,
   isAdmin = false,
+  lang = 'th',
   onClose,
   onRegistrationSuccess,
 }) => {
+  const t = translations[lang] || translations.th;
+
   const [rows, setRows] = useState<AttendeeRow[]>([
     {
       code: '',
@@ -51,9 +50,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       lname: '',
       dept: '',
       pos: '',
-      exp: '',
-      app: '',
-      rem: '',
+      expectation: '',
+      application: '',
+      remark: '',
     },
   ]);
 
@@ -76,7 +75,17 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       if (initialData && initialData.isEditMode) {
         setRows(
           initialData.rowData.length > 0
-            ? JSON.parse(JSON.stringify(initialData.rowData))
+            ? initialData.rowData.map((r) => ({
+                code: r.code || '',
+                sex: r.sex || 'Mr.',
+                fname: r.fname || '',
+                lname: r.lname || '',
+                dept: r.dept || '',
+                pos: r.pos || '',
+                expectation: r.expectation || r.exp || '',
+                application: r.application || r.app || '',
+                remark: r.remark || r.rem || '',
+              }))
             : [
                 {
                   code: '',
@@ -85,9 +94,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                   lname: '',
                   dept: '',
                   pos: '',
-                  exp: '',
-                  app: '',
-                  rem: '',
+                  expectation: '',
+                  application: '',
+                  remark: '',
                 },
               ]
         );
@@ -103,9 +112,9 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             lname: '',
             dept: '',
             pos: '',
-            exp: '',
-            app: '',
-            rem: '',
+            expectation: '',
+            application: '',
+            remark: '',
           },
         ]);
         setSubName(localStorage.getItem('last_sub_name') || '');
@@ -131,16 +140,16 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         lname: '',
         dept: subDept || '',
         pos: '',
-        exp: '',
-        app: '',
-        rem: '',
+        expectation: '',
+        application: '',
+        remark: '',
       },
     ]);
   };
 
   const removeRow = (index: number) => {
     if (rows.length === 1) {
-      alert('ต้องมีรายชื่อผู้เข้าอบรมอย่างน้อย 1 รายการ');
+      alert(lang === 'th' ? 'ต้องมีรายชื่อผู้เข้าอบรมอย่างน้อย 1 รายการ' : 'At least 1 attendee row is required');
       return;
     }
     setRows(rows.filter((_, idx) => idx !== index));
@@ -149,6 +158,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
   const updateRow = (index: number, field: keyof AttendeeRow, value: string) => {
     const updated = [...rows];
     updated[index] = { ...updated[index], [field]: value };
+    // sync aliases
+    if (field === 'expectation') updated[index].exp = value;
+    if (field === 'application') updated[index].app = value;
+    if (field === 'remark') updated[index].rem = value;
     setRows(updated);
   };
 
@@ -166,16 +179,19 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
           lname: r.lname || '',
           dept: r.dept || subDept || '',
           pos: r.pos || '',
-          exp: r.exp || '',
-          app: r.app || '',
-          rem: r.rem || '',
+          expectation: r.expectation || r.exp || '',
+          application: r.application || r.app || '',
+          remark: r.remark || r.rem || '',
+          exp: r.expectation || r.exp || '',
+          app: r.application || r.app || '',
+          rem: r.remark || r.rem || '',
         }));
         setRows(mappedRows);
         setErrorMsg(null);
       }
     } catch (err: unknown) {
       console.error(err);
-      setErrorMsg('ไม่สามารถอ่านไฟล์ Excel ได้ กรุณาใช้ไฟล์แบบฟอร์มที่ดาวน์โหลดจากระบบ');
+      setErrorMsg(lang === 'th' ? 'ไม่สามารถอ่านไฟล์ Excel ได้ กรุณาใช้ไฟล์แบบฟอร์มที่ดาวน์โหลดจากระบบ' : 'Failed to parse Excel file. Please use the system template.');
     } finally {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
@@ -189,14 +205,22 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
     // Validate submitter info
     if (!subName.trim() || !subDept.trim() || !subPhone.trim()) {
-      setErrorMsg('กรุณากรอกข้อมูลผู้ส่งข้อมูล (ชื่อ-นามสกุล, แผนก, เบอร์โทรติดต่อ) ให้ครบถ้วน');
+      setErrorMsg(
+        lang === 'th'
+          ? 'กรุณากรอกข้อมูลผู้ส่งข้อมูล (ชื่อ-นามสกุล, แผนก, เบอร์โทรติดต่อ) ให้ครบถ้วน'
+          : 'Please fill in all submitter information (Name, Department, Contact Phone).'
+      );
       return;
     }
 
-    // Validate attendees
+    // Validate attendees (Name & Last Name are required)
     const validRows = rows.filter((r) => r.fname.trim() !== '' && r.lname.trim() !== '');
     if (validRows.length === 0) {
-      setErrorMsg('กรุณาระบุชื่อและนามสกุลของผู้เข้าอบรมอย่างน้อย 1 ท่าน');
+      setErrorMsg(
+        lang === 'th'
+          ? 'กรุณาระบุชื่อและนามสกุลของผู้เข้าอบรมอย่างน้อย 1 ท่าน'
+          : 'Please enter at least one attendee with First Name and Last Name.'
+      );
       return;
     }
 
@@ -204,7 +228,11 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
     const codes = validRows.map((r) => r.code.trim()).filter((c) => c !== '');
     const uniqueCodes = new Set(codes);
     if (codes.length !== uniqueCodes.size) {
-      setErrorMsg('พบรหัสพนักงานซ้ำกันในรายการที่กรอก กรุณาตรวจสอบข้อมูล');
+      setErrorMsg(
+        lang === 'th'
+          ? 'พบรหัสพนักงานซ้ำกันในรายการที่กรอก กรุณาตรวจสอบข้อมูล'
+          : 'Duplicate Employee Code found in this submission. Please verify.'
+      );
       return;
     }
 
@@ -242,7 +270,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         }
 
         const now = new Date();
-        const submissionDateStr = now.toLocaleDateString('th-TH', {
+        const submissionDateStr = now.toLocaleDateString(lang === 'th' ? 'th-TH' : 'en-US', {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
@@ -285,11 +313,11 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
         localStorage.setItem('training_session_reg', JSON.stringify(sessionData));
         onRegistrationSuccess(sessionData);
       } else {
-        setErrorMsg(res.error || 'เกิดข้อผิดพลาดในการลงทะเบียน กรุณาลองใหม่อีกครั้ง');
+        setErrorMsg(res.error || (lang === 'th' ? 'เกิดข้อผิดพลาดในการลงทะเบียน กรุณาลองใหม่อีกครั้ง' : 'Registration error occurred.'));
       }
     } catch (err: unknown) {
       console.error(err);
-      setErrorMsg('เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง');
+      setErrorMsg(lang === 'th' ? 'เกิดข้อผิดพลาดในการบันทึกข้อมูล กรุณาลองใหม่อีกครั้ง' : 'Failed to save registration data.');
     } finally {
       setIsSubmitting(false);
     }
@@ -302,15 +330,15 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
       await downloadRegistrationReceiptPdf(receiptInfo);
     } catch (err) {
       console.error('PDF error', err);
-      alert('ไม่สามารถดาวน์โหลดเอกสาร PDF ได้');
+      alert(lang === 'th' ? 'ไม่สามารถดาวน์โหลดเอกสาร PDF ได้' : 'Failed to generate PDF document');
     } finally {
       setIsDownloadingPdf(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
-      <div className="rounded-2xl w-full max-w-4xl bg-white border border-slate-200 shadow-2xl flex flex-col my-auto overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/50 backdrop-blur-xs overflow-y-auto">
+      <div className="rounded-2xl w-full max-w-6xl bg-white border border-slate-200 shadow-2xl flex flex-col my-auto overflow-hidden">
         {/* =================================================== */}
         {/* VIEW 1: REGISTRATION SUCCESS RECEIPT */}
         {/* =================================================== */}
@@ -320,7 +348,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               <TohokuLogo size="md" />
               <div className="text-right">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                  ใบเสร็จยืนยันการลงทะเบียน
+                  {t.receiptConfirmation}
                 </span>
                 <span className="text-xs font-mono font-bold text-[#1e3a8a] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                   {receiptInfo.receiptNo}
@@ -333,10 +361,10 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 <CheckCircle2 className="w-7 h-7" />
               </div>
               <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                ลงทะเบียนสำเร็จเรียบร้อยแล้ว!
+                {t.regSuccessTitle}
               </h3>
               <p className="text-xs text-slate-500 font-medium mt-1">
-                บันทึกลงฐานข้อมูล Firebase เรียลไทม์ และประสานงานกับฝ่ายฝึกอบรมทันที
+                {t.regSuccessDesc}
               </p>
             </div>
 
@@ -344,24 +372,24 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-6">
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  หลักสูตรฝึกอบรม
+                  {t.coursesView}
                 </span>
                 <h4 className="text-sm font-bold text-slate-900">{receiptInfo.courseTitle}</h4>
                 <div className="text-xs text-slate-600 mt-2 space-y-1">
-                  <div>📅 วันที่: {receiptInfo.courseDate}</div>
-                  {receiptInfo.courseTime && <div>⏰ เวลา: {receiptInfo.courseTime}</div>}
-                  {receiptInfo.courseLocation && <div>📍 สถานที่: {receiptInfo.courseLocation}</div>}
+                  <div>📅 {t.dateLabel} {receiptInfo.courseDate}</div>
+                  {receiptInfo.courseTime && <div>⏰ {t.timeLabel} {receiptInfo.courseTime}</div>}
+                  {receiptInfo.courseLocation && <div>📍 {t.locationLabel} {receiptInfo.courseLocation}</div>}
                 </div>
               </div>
 
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
-                  ข้อมูลผู้ส่ง / ผู้ประสานงาน
+                  {t.submitterSection}
                 </span>
                 <h4 className="text-sm font-bold text-slate-900">{receiptInfo.submitterName}</h4>
                 <div className="text-xs text-slate-600 mt-2 space-y-1">
-                  <div>🏢 แผนก: {receiptInfo.submitterDept}</div>
-                  <div>📞 เบอร์โทรศัพท์: {receiptInfo.submitterPhone}</div>
+                  <div>🏢 {t.submitterDept}: {receiptInfo.submitterDept}</div>
+                  <div>📞 {t.submitterPhone}: {receiptInfo.submitterPhone}</div>
                   <div>🕒 วันที่ทำรายการ: {receiptInfo.submissionDate}</div>
                 </div>
               </div>
@@ -370,17 +398,19 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             {/* Attendees Summary Table */}
             <div className="mb-6">
               <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                รายชื่อผู้เข้าร่วมอบรม ({receiptInfo.attendees.length} ท่าน)
+                {t.traineesSection} ({receiptInfo.attendees.length} {t.personsCountSuffix})
               </h4>
-              <div className="border border-slate-200 rounded-xl overflow-hidden">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="bg-slate-100 text-slate-600 font-bold uppercase text-[10px]">
+              <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs">
+                <table className="w-full text-left text-xs border-collapse min-w-[700px]">
+                  <thead className="bg-slate-100 text-slate-700 font-bold uppercase text-[10px]">
                     <tr>
-                      <th className="p-2 w-10 text-center">ลำดับ</th>
-                      <th className="p-2 w-24">รหัสพนักงาน</th>
-                      <th className="p-2">ชื่อ - นามสกุล</th>
-                      <th className="p-2">แผนก</th>
-                      <th className="p-2">ตำแหน่ง</th>
+                      <th className="p-2 w-10 text-center">{t.colIndex}</th>
+                      <th className="p-2 w-24">{t.colCode}</th>
+                      <th className="p-2">{t.colName}</th>
+                      <th className="p-2">{t.colDept}</th>
+                      <th className="p-2">{t.colPosition}</th>
+                      <th className="p-2">{t.colExpectation}</th>
+                      <th className="p-2">{t.colApplication}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -393,6 +423,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                         </td>
                         <td className="p-2 text-slate-600">{a.dept || '-'}</td>
                         <td className="p-2 text-slate-600">{a.pos || '-'}</td>
+                        <td className="p-2 text-slate-600">{a.expectation || a.exp || '-'}</td>
+                        <td className="p-2 text-slate-600">{a.application || a.app || '-'}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -409,7 +441,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-[#1e3a8a] bg-blue-50 hover:bg-blue-100 border border-blue-200 cursor-pointer transition-all"
               >
                 <FileDown className="w-4 h-4" />
-                <span>{isDownloadingPdf ? 'กำลังสร้าง PDF...' : 'ดาวน์โหลดใบยืนยัน (PDF)'}</span>
+                <span>{isDownloadingPdf ? 'Generating PDF...' : t.downloadPdfBtn}</span>
               </button>
 
               <button
@@ -417,17 +449,17 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 onClick={onClose}
                 className="px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:shadow-md cursor-pointer transition-all"
               >
-                เสร็จสิ้น / ปิดหน้าต่าง
+                {t.finishBtn}
               </button>
             </div>
           </div>
         ) : (
           /* =================================================== */
-          /* VIEW 2: REGISTRATION FORM */
+          /* VIEW 2: REGISTRATION FORM EXACTLY AS IN IMAGE.PNG */
           /* =================================================== */
-          <form onSubmit={handleSubmit} className="flex flex-col max-h-[90vh]">
+          <form onSubmit={handleSubmit} className="flex flex-col max-h-[92vh]">
             {/* Header */}
-            <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 to-blue-50/50 border-b border-slate-200 flex items-start justify-between gap-3">
+            <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 to-blue-50/50 border-b border-slate-200 flex items-start justify-between gap-3 shrink-0">
               <div className="flex items-start gap-3">
                 <TohokuLogo size="sm" className="hidden sm:flex mt-0.5" />
                 <div>
@@ -440,7 +472,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                     </span>
                     <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
                       <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                      เปิดรับลงทะเบียน
+                      {t.statusOpen}
                     </span>
                   </div>
                   <h3 className="text-base sm:text-lg font-black text-slate-900 tracking-tight leading-snug">
@@ -475,7 +507,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
             </div>
 
             {/* Form Body */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-5">
+            <div className="p-3 sm:p-5 overflow-y-auto space-y-4">
               {errorMsg && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs font-bold text-rose-700 flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 text-rose-500" />
@@ -484,20 +516,20 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
               )}
 
               {/* Submitter Details */}
-              <div className="bg-slate-50/80 p-4 rounded-xl border border-slate-200/80">
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+              <div className="bg-slate-50/80 p-3.5 sm:p-4 rounded-xl border border-slate-200/80">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
                   <User className="w-3.5 h-3.5 text-[#1e3a8a]" />
-                  <span>ข้อมูลผู้ส่งรายชื่อ / ผู้ประสานงาน (Submitter Information)</span>
+                  <span>{t.submitterSection}</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                      ชื่อ - นามสกุล <span className="text-rose-500">*</span>
+                      {t.submitterName} <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="เช่น สมชาย ใจดี"
+                      placeholder={t.submitterNamePlaceholder}
                       value={subName}
                       onChange={(e) => setSubName(e.target.value)}
                       className="w-full px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
@@ -506,12 +538,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
                   <div>
                     <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                      แผนก / ฝ่าย <span className="text-rose-500">*</span>
+                      {t.submitterDept} <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="เช่น ENG / PTE"
+                      placeholder={t.submitterDeptPlaceholder}
                       value={subDept}
                       onChange={(e) => setSubDept(e.target.value)}
                       className="w-full px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
@@ -520,12 +552,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
 
                   <div>
                     <label className="text-[11px] font-bold text-slate-600 block mb-1">
-                      เบอร์โทรติดต่อ <span className="text-rose-500">*</span>
+                      {t.submitterPhone} <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       required
-                      placeholder="เช่น 081-234-5678 หรือ เบอร์ต่อ 123"
+                      placeholder={t.submitterPhonePlaceholder}
                       value={subPhone}
                       onChange={(e) => setSubPhone(e.target.value)}
                       className="w-full px-3 py-1.5 text-xs font-semibold bg-white border border-slate-200 rounded-lg outline-none focus:border-[#1e3a8a]"
@@ -534,12 +566,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 </div>
               </div>
 
-              {/* Trainees List Table */}
+              {/* Trainees List Table Header Controls */}
               <div>
-                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <div className="flex items-center justify-between mb-2.5 flex-wrap gap-2">
                   <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                     <User className="w-3.5 h-3.5 text-[#1e3a8a]" />
-                    <span>รายชื่อผู้เข้ารับการอบรม ({rows.length} ท่าน)</span>
+                    <span>{t.traineesSection} ({rows.length} {t.personsCountSuffix})</span>
                   </h4>
 
                   <div className="flex items-center gap-2">
@@ -549,12 +581,12 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                       className="text-[11px] font-bold text-slate-600 hover:text-[#1e3a8a] flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors cursor-pointer"
                     >
                       <Download className="w-3 h-3" />
-                      <span>แบบฟอร์ม Excel</span>
+                      <span>{t.excelTemplateBtn}</span>
                     </button>
 
                     <label className="text-[11px] font-bold text-[#1e3a8a] hover:bg-blue-50 flex items-center gap-1 px-2.5 py-1 border border-blue-200 rounded-lg transition-colors cursor-pointer">
                       <Upload className="w-3 h-3" />
-                      <span>นำเข้า Excel</span>
+                      <span>{t.importExcelBtn}</span>
                       <input
                         ref={fileInputRef}
                         type="file"
@@ -563,134 +595,197 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                         className="hidden"
                       />
                     </label>
-
-                    <button
-                      type="button"
-                      onClick={addRow}
-                      className="text-[11px] font-bold text-white bg-[#1e3a8a] hover:bg-[#172554] flex items-center gap-1 px-3 py-1 rounded-lg transition-colors cursor-pointer shadow-2xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>+ เพิ่มผู้เข้าอบรม</span>
-                    </button>
                   </div>
                 </div>
 
-                {/* Rows Table */}
-                <div className="border border-slate-200 rounded-xl overflow-x-auto shadow-2xs">
-                  <table className="w-full text-left text-xs border-collapse min-w-[700px]">
-                    <thead className="bg-slate-50 text-slate-600 font-bold uppercase text-[10px] tracking-wider border-b border-slate-200 select-none">
-                      <tr>
-                        <th className="p-2 text-center w-10">ลำดับ</th>
-                        <th className="p-2 w-28">รหัสพนักงาน</th>
-                        <th className="p-2 w-20">คำนำหน้า</th>
-                        <th className="p-2 min-w-[120px]">ชื่อ *</th>
-                        <th className="p-2 min-w-[120px]">นามสกุล *</th>
-                        <th className="p-2 min-w-[100px]">แผนก</th>
-                        <th className="p-2 min-w-[100px]">ตำแหน่ง</th>
-                        <th className="p-2 w-20">เบอร์ต่อ</th>
-                        <th className="p-2 w-10 text-center"></th>
+                {/* EXACT TABLE FROM IMAGE.PNG */}
+                <div className="border border-slate-300 rounded-lg overflow-x-auto shadow-xs bg-white">
+                  <table className="w-full text-left text-xs border-collapse min-w-[1050px]">
+                    <thead className="bg-[#f8fafc] text-slate-800 font-bold text-[11px] border-b border-slate-300 select-none">
+                      <tr className="divide-x divide-slate-200">
+                        <th className="py-2 px-2 text-center w-10 font-bold">#</th>
+                        <th className="py-2 px-2.5 w-24 text-center font-bold">
+                          Code<br />
+                          <span className="text-[10px] text-slate-500 font-normal">* (รหัส)</span>
+                        </th>
+                        <th className="py-2 px-2 w-20 text-center font-bold">
+                          Sex<br />
+                          <span className="text-[10px] text-slate-500 font-normal">* (เพศ)</span>
+                        </th>
+                        <th className="py-2 px-2.5 min-w-[120px] text-center font-bold">
+                          Name<br />
+                          <span className="text-[10px] text-slate-500 font-normal">* (ชื่อ)</span>
+                        </th>
+                        <th className="py-2 px-2.5 min-w-[120px] text-center font-bold">
+                          Last Name<br />
+                          <span className="text-[10px] text-slate-500 font-normal">* (นามสกุล)</span>
+                        </th>
+                        <th className="py-2 px-2.5 min-w-[125px] text-center font-bold">
+                          Dept./In-charge<br />
+                          <span className="text-[10px] text-slate-500 font-normal">* (แผนก)</span>
+                        </th>
+                        <th className="py-2 px-2.5 min-w-[125px] text-center font-bold">
+                          Position<br />
+                          <span className="text-[10px] text-slate-500 font-normal">* (ตำแหน่ง)</span>
+                        </th>
+                        <th className="py-2 px-2.5 min-w-[140px] text-center font-bold">
+                          Expectation<br />
+                          <span className="text-[10px] text-slate-500 font-normal">* (ความคาดหวัง)</span>
+                        </th>
+                        <th className="py-2 px-2.5 min-w-[140px] text-center font-bold">
+                          Application<br />
+                          <span className="text-[10px] text-slate-500 font-normal">* (การปรับใช้)</span>
+                        </th>
+                        <th className="py-2 px-2.5 min-w-[120px] text-center font-bold">
+                          Remark<br />
+                          <span className="text-[10px] text-slate-500 font-normal">(เพิ่มเติม)</span>
+                        </th>
+                        <th className="py-2 px-2 w-12 text-center font-bold">ลบ</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
+                    <tbody className="divide-y divide-slate-200 bg-white">
                       {rows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/70">
-                          <td className="p-2 text-center font-bold text-slate-400">{idx + 1}</td>
-                          <td className="p-2">
+                        <tr key={idx} className="hover:bg-slate-50/70 divide-x divide-slate-100">
+                          {/* # */}
+                          <td className="p-2 text-center font-bold text-slate-600 bg-slate-50/50">
+                            {idx + 1}
+                          </td>
+
+                          {/* Code */}
+                          <td className="p-1.5">
                             <input
                               type="text"
-                              placeholder="เช่น 9579"
                               value={row.code}
                               onChange={(e) => updateRow(idx, 'code', e.target.value)}
-                              className="w-full px-2 py-1 text-xs font-mono font-bold border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
+                              className="w-full px-2 py-1.5 text-xs font-mono font-bold bg-white border border-slate-300 rounded focus:border-[#1e3a8a] focus:ring-1 focus:ring-[#1e3a8a]/20 outline-none"
                             />
                           </td>
-                          <td className="p-2">
+
+                          {/* Sex */}
+                          <td className="p-1.5">
                             <select
                               value={row.sex}
                               onChange={(e) => updateRow(idx, 'sex', e.target.value as any)}
-                              className="w-full px-1.5 py-1 text-xs border border-slate-200 rounded outline-none"
+                              className="w-full px-1.5 py-1.5 text-xs bg-white border border-slate-300 rounded focus:border-[#1e3a8a] outline-none"
                             >
                               <option value="Mr.">Mr.</option>
                               <option value="Ms.">Ms.</option>
                               <option value="Mrs.">Mrs.</option>
                             </select>
                           </td>
-                          <td className="p-2">
+
+                          {/* Name */}
+                          <td className="p-1.5">
                             <input
                               type="text"
                               required
-                              placeholder="ชื่อ"
                               value={row.fname}
                               onChange={(e) => updateRow(idx, 'fname', e.target.value)}
-                              className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
+                              className="w-full px-2 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded focus:border-[#1e3a8a] outline-none"
                             />
                           </td>
-                          <td className="p-2">
+
+                          {/* Last Name */}
+                          <td className="p-1.5">
                             <input
                               type="text"
                               required
-                              placeholder="นามสกุล"
                               value={row.lname}
                               onChange={(e) => updateRow(idx, 'lname', e.target.value)}
-                              className="w-full px-2 py-1 text-xs font-semibold border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
+                              className="w-full px-2 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded focus:border-[#1e3a8a] outline-none"
                             />
                           </td>
-                          <td className="p-2">
+
+                          {/* Dept./In-charge */}
+                          <td className="p-1.5">
                             <input
                               type="text"
-                              placeholder="แผนก"
                               value={row.dept}
                               onChange={(e) => updateRow(idx, 'dept', e.target.value)}
-                              className="w-full px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
+                              className="w-full px-2 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded focus:border-[#1e3a8a] outline-none"
                             />
                           </td>
-                          <td className="p-2">
+
+                          {/* Position */}
+                          <td className="p-1.5">
                             <input
                               type="text"
-                              placeholder="ตำแหน่ง"
                               value={row.pos}
                               onChange={(e) => updateRow(idx, 'pos', e.target.value)}
-                              className="w-full px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
+                              className="w-full px-2 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded focus:border-[#1e3a8a] outline-none"
                             />
                           </td>
-                          <td className="p-2">
+
+                          {/* Expectation */}
+                          <td className="p-1.5">
                             <input
                               type="text"
-                              placeholder="เบอร์ต่อ"
-                              value={row.exp}
-                              onChange={(e) => updateRow(idx, 'exp', e.target.value)}
-                              className="w-full px-2 py-1 text-xs border border-slate-200 rounded outline-none focus:border-[#1e3a8a]"
+                              value={row.expectation || row.exp || ''}
+                              onChange={(e) => updateRow(idx, 'expectation', e.target.value)}
+                              className="w-full px-2 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded focus:border-[#1e3a8a] outline-none"
                             />
                           </td>
-                          <td className="p-2 text-center">
-                            {rows.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeRow(idx)}
-                                className="text-slate-400 hover:text-rose-600 p-1 rounded cursor-pointer"
-                                title="ลบแถวนี้"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+
+                          {/* Application */}
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.application || row.app || ''}
+                              onChange={(e) => updateRow(idx, 'application', e.target.value)}
+                              className="w-full px-2 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded focus:border-[#1e3a8a] outline-none"
+                            />
+                          </td>
+
+                          {/* Remark */}
+                          <td className="p-1.5">
+                            <input
+                              type="text"
+                              value={row.remark || row.rem || ''}
+                              onChange={(e) => updateRow(idx, 'remark', e.target.value)}
+                              className="w-full px-2 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded focus:border-[#1e3a8a] outline-none"
+                            />
+                          </td>
+
+                          {/* ลบ (Red square button with X matching image.png) */}
+                          <td className="p-1.5 text-center">
+                            <button
+                              type="button"
+                              onClick={() => removeRow(idx)}
+                              className="w-7 h-7 rounded bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center mx-auto cursor-pointer shadow-xs transition-colors"
+                              title="ลบแถวนี้"
+                            >
+                              <X className="w-4 h-4 stroke-[3]" />
+                            </button>
                           </td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+
+                {/* EXACT "+ เพิ่มรายชื่อ (Add Row)" BUTTON FROM IMAGE.PNG */}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={addRow}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-emerald-600 text-emerald-700 bg-white hover:bg-emerald-50 text-xs font-bold transition-all cursor-pointer shadow-xs"
+                  >
+                    <PlusCircle className="w-4 h-4 text-emerald-600" />
+                    <span>{t.addRowBtn}</span>
+                  </button>
+                </div>
               </div>
             </div>
 
             {/* Footer Buttons */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
               <button
                 type="button"
                 onClick={onClose}
                 disabled={isSubmitting}
                 className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 rounded-xl transition-all cursor-pointer"
               >
-                ยกเลิก
+                {t.cancelBtn}
               </button>
 
               <button
@@ -701,8 +796,8 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                 <CheckCircle className="w-4 h-4" />
                 <span>
                   {isSubmitting
-                    ? 'กำลังบันทึกลงฐานข้อมูล Firebase...'
-                    : `ยืนยันการลงทะเบียน (${rows.length} ท่าน)`}
+                    ? t.savingToFirebase
+                    : `${t.submitRegistrationBtn} (${rows.length} ${t.personsCountSuffix})`}
                 </span>
               </button>
             </div>

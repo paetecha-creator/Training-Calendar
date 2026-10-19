@@ -665,6 +665,34 @@ export function subscribeAttendees(
 }
 
 /**
+ * Batch save or update courses in Firestore from Excel upload
+ */
+export async function saveBatchCoursesToFirestore(
+  courses: TrainingEvent[]
+): Promise<{ count: number }> {
+  const path = 'events';
+  try {
+    const batch = writeBatch(db);
+    courses.forEach((c) => {
+      const docRef = doc(db, path, c.id);
+      batch.set(
+        docRef,
+        {
+          ...c,
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+    return { count: courses.length };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
+/**
  * Add or update attendees in Firestore in batch
  */
 export async function addAttendeesToFirestore(
@@ -681,6 +709,10 @@ export async function addAttendeesToFirestore(
     attendees.forEach((att, idx) => {
       const attId = att.id || `ATT-${att.code || Date.now()}-${idx}`;
       const docRef = doc(db, path, attId);
+      const expectation = (att.expectation || att.exp || '').trim();
+      const application = (att.application || att.app || '').trim();
+      const remark = (att.remark || att.rem || '').trim();
+
       const dataToSave: AttendeeWithMeta = {
         id: attId,
         courseId: course.id,
@@ -692,9 +724,13 @@ export async function addAttendeesToFirestore(
         lname: (att.lname || '').trim(),
         dept: (att.dept || '').trim(),
         pos: (att.pos || '').trim(),
-        exp: (att.exp || '').trim(),
-        app: (att.app || '').trim(),
-        rem: (att.rem || '').trim(),
+        expectation: expectation,
+        application: application,
+        remark: remark,
+        // backward-compatibility aliases
+        exp: expectation,
+        app: application,
+        rem: remark,
         submitterName: (submitterInfo.name || att.submitterName || '').trim(),
         submitterDept: (submitterInfo.dept || att.submitterDept || '').trim(),
         submitterPhone: (submitterInfo.phone || att.submitterPhone || '').trim(),

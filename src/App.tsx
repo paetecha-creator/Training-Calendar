@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { TrainingEvent, TrainingCategory, SessionRegistrationData, HolidayItem } from './types';
+import { TrainingEvent, TrainingCategory, SessionRegistrationData, HolidayItem, Language } from './types';
 import {
   subscribeEvents,
   subscribeHolidays,
@@ -21,6 +21,7 @@ import { SelectCourseModal } from './components/SelectCourseModal';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AdminLoginModal } from './components/AdminLoginModal';
 import { HolidayFormModal } from './components/HolidayFormModal';
+import { BatchCourseUploadModal } from './components/BatchCourseUploadModal';
 import { User } from 'firebase/auth';
 import { CheckCircle2, X, Filter } from 'lucide-react';
 
@@ -42,6 +43,26 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState<boolean>(false);
 
+  // Language state: defaults to 'th' with localStorage persistence
+  const [lang, setLang] = useState<Language>(() => {
+    try {
+      const saved = localStorage.getItem('app_lang');
+      if (saved === 'th' || saved === 'en') return saved;
+    } catch (e) {
+      console.error(e);
+    }
+    return 'th';
+  });
+
+  const handleToggleLang = (newLang: Language) => {
+    setLang(newLang);
+    try {
+      localStorage.setItem('app_lang', newLang);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   // Authentication & Admin State
   const [user, setUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
@@ -62,6 +83,7 @@ export default function App() {
   const [isAdminLoginModalOpen, setIsAdminLoginModalOpen] = useState(false);
   const [isHolidayModalOpen, setIsHolidayModalOpen] = useState(false);
   const [editingHoliday, setEditingHoliday] = useState<HolidayItem | null>(null);
+  const [isBatchCourseModalOpen, setIsBatchCourseModalOpen] = useState(false);
 
   // Session registration tracking for "ดู/แก้ไขข้อมูลที่ลงทะเบียนล่าสุด"
   const [sessionRegData, setSessionRegData] = useState<SessionRegistrationData | null>(() => {
@@ -174,7 +196,7 @@ export default function App() {
         setIsAdmin(true);
         setViewMode('admin');
         setSyncStatus({
-          text: 'เข้าสู่ระบบผู้ดูแลระบบด้วย Google สำเร็จ (Firebase Cloud Sync)',
+          text: lang === 'th' ? 'เข้าสู่ระบบผู้ดูแลระบบด้วย Google สำเร็จ (Firebase Cloud Sync)' : 'Admin Google Sign-in Successful (Firebase Cloud Sync)',
           type: 'success',
         });
       }
@@ -211,7 +233,7 @@ export default function App() {
     try {
       await saveEventToFirestore(payload);
       setSyncStatus({
-        text: `บันทึกหลักสูตร "${payload.title}" เรียบร้อยแล้ว (ซิงค์สดลง Firebase ทันที)`,
+        text: lang === 'th' ? `บันทึกหลักสูตร "${payload.title}" เรียบร้อยแล้ว (ซิงค์สดลง Firebase ทันที)` : `Saved course "${payload.title}" (Live Firebase Sync)`,
         type: 'success',
       });
       setIsFormModalOpen(false);
@@ -225,11 +247,11 @@ export default function App() {
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    if (!window.confirm('คุณแน่ใจหรือไม่ว่าต้องการลบหลักสูตรนี้?')) return;
+    if (!window.confirm(lang === 'th' ? 'คุณแน่ใจหรือไม่ว่าต้องการลบหลักสูตรนี้?' : 'Are you sure you want to delete this course?')) return;
     setIsSyncing(true);
     try {
       await deleteEventFromFirestore(eventId);
-      setSyncStatus({ text: 'ลบหลักสูตรเรียบร้อยแล้ว', type: 'success' });
+      setSyncStatus({ text: lang === 'th' ? 'ลบหลักสูตรเรียบร้อยแล้ว' : 'Course deleted successfully', type: 'success' });
       setSelectedEvent(null);
       setTimeout(() => setSyncStatus(null), 3000);
     } catch (err) {
@@ -246,7 +268,7 @@ export default function App() {
   ) => {
     await saveHolidayToFirestore(data);
     setSyncStatus({
-      text: `บันทึกวันหยุด "${data.name}" เรียบร้อยแล้ว (อัปเดตบนปฏิทินทันที)`,
+      text: lang === 'th' ? `บันทึกวันหยุด "${data.name}" เรียบร้อยแล้ว (อัปเดตบนปฏิทินทันที)` : `Saved holiday "${data.name}" (Updated live)`,
       type: 'success',
     });
     setTimeout(() => setSyncStatus(null), 3000);
@@ -332,6 +354,8 @@ export default function App() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         onToggleMobileMenu={() => setIsMobileSidebarOpen(true)}
+        lang={lang}
+        onToggleLang={handleToggleLang}
       />
 
       {/* Sync Status Banner (Only visible to Admin) */}
@@ -376,6 +400,8 @@ export default function App() {
               setEditingHoliday(null);
               setIsHolidayModalOpen(true);
             }}
+            onOpenBatchCourseModal={() => setIsBatchCourseModalOpen(true)}
+            lang={lang}
           />
         </div>
 
@@ -389,7 +415,7 @@ export default function App() {
             <div className="relative w-72 max-w-[85vw] h-full bg-[#eef2f6] p-3 flex flex-col z-10 shadow-2xl overflow-y-auto">
               <div className="flex items-center justify-between pb-2 mb-1 border-b border-slate-200/80">
                 <span className="font-extrabold text-xs text-[#1e3a8a] uppercase tracking-wider">
-                  เมนู & หมวดหมู่หลักสูตร
+                  {lang === 'th' ? 'เมนู & หมวดหมู่หลักสูตร' : 'Menu & Categories'}
                 </span>
                 <button
                   onClick={() => setIsMobileSidebarOpen(false)}
@@ -434,6 +460,11 @@ export default function App() {
                     setEditingHoliday(null);
                     setIsHolidayModalOpen(true);
                   }}
+                  onOpenBatchCourseModal={() => {
+                    setIsMobileSidebarOpen(false);
+                    setIsBatchCourseModalOpen(true);
+                  }}
+                  lang={lang}
                 />
               </div>
             </div>
@@ -450,6 +481,7 @@ export default function App() {
             onSelectEvent={(ev) => setSelectedEvent(ev)}
             onAddEventOnDate={(dateStr) => handleOpenAddEvent(dateStr)}
             searchQuery={searchQuery}
+            lang={lang}
           />
         ) : viewMode === 'list' ? (
           <ListView
@@ -462,6 +494,7 @@ export default function App() {
             onDeleteEvent={(id) => handleDeleteEvent(id)}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            lang={lang}
           />
         ) : (
           <AdminDashboard
@@ -474,6 +507,8 @@ export default function App() {
               setIsSyncing(true);
               setTimeout(() => setIsSyncing(false), 400);
             }}
+            lang={lang}
+            onOpenBatchCourseModal={() => setIsBatchCourseModalOpen(true)}
           />
         )}
       </main>
@@ -487,7 +522,7 @@ export default function App() {
             title="เปิดตัวกรองหมวดหมู่และลงทะเบียน"
           >
             <Filter className="w-4 h-4 text-white" />
-            <span>ตัวกรอง ({selectedCategories.length}/{ALL_CATEGORIES.length})</span>
+            <span>{lang === 'th' ? `ตัวกรอง (${selectedCategories.length}/${ALL_CATEGORIES.length})` : `Filter (${selectedCategories.length}/${ALL_CATEGORIES.length})`}</span>
           </button>
         </div>
       )}
@@ -517,6 +552,7 @@ export default function App() {
         event={registeringEvent}
         initialData={sessionRegData}
         isAdmin={isAdmin}
+        lang={lang}
         onClose={() => setRegisteringEvent(null)}
         onRegistrationSuccess={handleRegistrationSuccess}
       />
@@ -549,6 +585,23 @@ export default function App() {
           setEditingHoliday(null);
         }}
         onSave={handleSaveHoliday}
+      />
+
+      {/* Batch Course Excel Upload Modal */}
+      <BatchCourseUploadModal
+        isOpen={isBatchCourseModalOpen}
+        lang={lang}
+        onClose={() => setIsBatchCourseModalOpen(false)}
+        onSuccess={(count) => {
+          setSyncStatus({
+            text:
+              lang === 'th'
+                ? `นำเข้าและอัปเดตหลักสูตรสำเร็จ ${count} หลักสูตร (Firebase Live)`
+                : `Successfully uploaded and synced ${count} courses (Firebase Live)`,
+            type: 'success',
+          });
+          setTimeout(() => setSyncStatus(null), 3000);
+        }}
       />
     </div>
   );
