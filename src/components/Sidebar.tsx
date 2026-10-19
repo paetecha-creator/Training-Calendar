@@ -7,9 +7,6 @@ import {
   Square,
   LogOut,
   CheckCheck,
-  Sparkles,
-  Calendar,
-  FileSpreadsheet,
 } from 'lucide-react';
 import { TrainingCategory, Language } from '../types';
 import { TohokuLogo } from './TohokuLogo';
@@ -28,7 +25,6 @@ interface SidebarProps {
   onOpenAdminManage: () => void;
   onOpenAdminLogin: () => void;
   onExitAdmin: () => void;
-  onOpenBatchCourseModal?: () => void;
   lang?: Language;
 }
 
@@ -53,7 +49,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenAdminManage,
   onOpenAdminLogin,
   onExitAdmin,
-  onOpenBatchCourseModal,
   lang = 'th',
 }) => {
   const t = translations[lang] || translations.th;
@@ -67,30 +62,34 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <TohokuLogo size="lg" />
         </div>
 
-        {/* Action Button: Register Course (CSS selector 1: high visual contrast CTA) */}
-        <div className="space-y-2 mb-4">
-          <button
-            onClick={onOpenRegisterModal}
-            className="w-full py-2.5 px-3 rounded-xl font-black text-xs text-white bg-gradient-to-r from-[#1e3a8a] via-[#1d4ed8] to-[#1e3a8a] shadow-md hover:shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30"
-          >
-            <UserCheck className="w-4 h-4 text-white" />
-            <span className="tracking-wide">{t.registerBtn}</span>
-            <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1">
-              {openCoursesCount} {t.coursesCountSuffix}
-            </span>
-          </button>
+        {/* Action Button: Register Course (Displayed ONLY when there are open courses for registration) */}
+        {(openCoursesCount > 0 || hasLatestSubmission) && (
+          <div className="space-y-2 mb-4">
+            {openCoursesCount > 0 && (
+              <button
+                onClick={onOpenRegisterModal}
+                className="w-full py-2.5 px-3 rounded-xl font-black text-xs text-white bg-gradient-to-r from-[#1e3a8a] via-[#1d4ed8] to-[#1e3a8a] shadow-md hover:shadow-lg active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer border border-blue-400/30"
+              >
+                <UserCheck className="w-4 h-4 text-white" />
+                <span className="tracking-wide">{t.registerBtn}</span>
+                <span className="bg-white/20 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1">
+                  {openCoursesCount} {t.coursesCountSuffix}
+                </span>
+              </button>
+            )}
 
-          {/* View / Edit Latest Registration */}
-          {hasLatestSubmission && (
-            <button
-              onClick={onEditLatestSubmission}
-              className="w-full py-2 px-2.5 rounded-xl font-bold text-[11px] text-[#1e3a8a] bg-blue-50/80 hover:bg-blue-100/90 border border-blue-200/80 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              <span>{t.viewEditLatest}</span>
-            </button>
-          )}
-        </div>
+            {/* View / Edit Latest Registration (Appears ONLY right after registering in the active session) */}
+            {hasLatestSubmission && (
+              <button
+                onClick={onEditLatestSubmission}
+                className="w-full py-2 px-2.5 rounded-xl font-bold text-[11px] text-[#1e3a8a] bg-blue-50/80 hover:bg-blue-100/90 border border-blue-200/80 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>{t.viewEditLatest}</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Category Filters (CSS selector 7: flat inset list) */}
         <div className="space-y-2">
@@ -185,16 +184,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               {t.manageRegistrations}
             </button>
-
-            {onOpenBatchCourseModal && (
-              <button
-                onClick={onOpenBatchCourseModal}
-                className="w-full py-1.5 px-3 text-xs font-bold bg-blue-50 hover:bg-blue-100 text-[#1e3a8a] border border-blue-200 rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5 text-[#1e3a8a]" />
-                <span>{t.batchUploadCourseSidebar}</span>
-              </button>
-            )}
 
             {/* Firebase Live Cloud Database status */}
             <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10px] text-slate-500 font-medium">

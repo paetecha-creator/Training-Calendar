@@ -86,15 +86,17 @@ export default function App() {
   const [isBatchCourseModalOpen, setIsBatchCourseModalOpen] = useState(false);
 
   // Session registration tracking for "ดู/แก้ไขข้อมูลที่ลงทะเบียนล่าสุด"
-  const [sessionRegData, setSessionRegData] = useState<SessionRegistrationData | null>(() => {
+  // Appears ONLY right after submitting registration during active session. Disappears on page refresh or leaving.
+  const [sessionRegData, setSessionRegData] = useState<SessionRegistrationData | null>(null);
+
+  useEffect(() => {
+    // Clear any persistent storage on load so refresh or reopen never retains the button
     try {
-      const saved = localStorage.getItem('training_session_reg');
-      if (saved) return JSON.parse(saved);
+      localStorage.removeItem('training_session_reg');
     } catch (e) {
-      console.error(e);
+      // ignore
     }
-    return null;
-  });
+  }, []);
 
   // Real-time Firestore Live Subscriptions for Courses, Holidays, and Attendees
   useEffect(() => {
@@ -280,12 +282,8 @@ export default function App() {
   };
 
   const handleRegistrationSuccess = (data: SessionRegistrationData) => {
+    // Keep in-memory for the current active session only
     setSessionRegData(data);
-    try {
-      localStorage.setItem('training_session_reg', JSON.stringify(data));
-    } catch (e) {
-      console.error(e);
-    }
   };
 
   const handleEditLatestSubmission = () => {
@@ -396,7 +394,6 @@ export default function App() {
               setIsAdmin(false);
               setViewMode('calendar');
             }}
-            onOpenBatchCourseModal={() => setIsBatchCourseModalOpen(true)}
             lang={lang}
           />
         </div>
@@ -450,10 +447,6 @@ export default function App() {
                     setIsMobileSidebarOpen(false);
                     setIsAdmin(false);
                     setViewMode('calendar');
-                  }}
-                  onOpenBatchCourseModal={() => {
-                    setIsMobileSidebarOpen(false);
-                    setIsBatchCourseModalOpen(true);
                   }}
                   lang={lang}
                 />

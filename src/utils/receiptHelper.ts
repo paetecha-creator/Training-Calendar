@@ -63,20 +63,24 @@ export async function downloadRegistrationReceiptPdf(
     pdfContainer.style.boxSizing = 'border-box';
 
     const rowsHtml = info.attendees
-      .map(
-        (a, idx) => `
+      .map((a, idx) => {
+        const expVal = a.expectation || a.exp || (a as any)['Expectation'] || (a as any)['ความคาดหวัง'] || '-';
+        const appVal = a.application || a.app || (a as any)['Application'] || (a as any)['การปรับใช้'] || '-';
+        const remVal = a.remark || a.rem || (a as any)['Remark'] || (a as any)['เพิ่มเติม'] || '-';
+        return `
         <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px; background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
-          <td style="padding: 7px 8px; text-align: center; color: #64748b; font-weight: bold;">${idx + 1}</td>
-          <td style="padding: 7px 8px; font-weight: bold; font-family: monospace; color: #1e3a8a;">${a.code || '-'}</td>
-          <td style="padding: 7px 8px; color: #475569;">${a.sex || '-'}</td>
-          <td style="padding: 7px 8px; font-weight: bold; color: #0f172a;">${a.fname || ''} ${a.lname || ''}</td>
-          <td style="padding: 7px 8px; color: #334155;">${a.dept || '-'}</td>
-          <td style="padding: 7px 8px; color: #334155;">${a.pos || '-'}</td>
-          <td style="padding: 7px 8px; color: #475569; font-size: 10px;">${a.expectation || a.exp || '-'}</td>
-          <td style="padding: 7px 8px; color: #475569; font-size: 10px;">${a.application || a.app || '-'}</td>
+          <td style="padding: 7px 6px; text-align: center; color: #64748b; font-weight: bold;">${idx + 1}</td>
+          <td style="padding: 7px 6px; font-weight: bold; font-family: monospace; color: #1e3a8a;">${a.code || '-'}</td>
+          <td style="padding: 7px 6px; color: #475569;">${a.sex || '-'}</td>
+          <td style="padding: 7px 6px; font-weight: bold; color: #0f172a;">${a.fname || ''} ${a.lname || ''}</td>
+          <td style="padding: 7px 6px; color: #334155;">${a.dept || '-'}</td>
+          <td style="padding: 7px 6px; color: #334155;">${a.pos || '-'}</td>
+          <td style="padding: 7px 6px; color: #334155; font-size: 10px; word-break: break-word;">${expVal}</td>
+          <td style="padding: 7px 6px; color: #334155; font-size: 10px; word-break: break-word;">${appVal}</td>
+          <td style="padding: 7px 6px; color: #64748b; font-size: 10px; word-break: break-word;">${remVal}</td>
         </tr>
-      `
-      )
+      `;
+      })
       .join('');
 
     pdfContainer.innerHTML = `
@@ -134,14 +138,15 @@ export async function downloadRegistrationReceiptPdf(
         <table style="width: 100%; border-collapse: collapse; margin-top: 4px; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
           <thead>
             <tr style="background: #f1f5f9;">
-              <th style="width: 32px; text-align: center; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">#</th>
-              <th style="width: 85px; text-align: left; padding: 7px 6px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">รหัสพนักงาน</th>
-              <th style="width: 48px; text-align: left; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">เพศ/คำนำ</th>
-              <th style="width: 140px; text-align: left; padding: 7px 6px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">ชื่อ - นามสกุล</th>
-              <th style="width: 110px; text-align: left; padding: 7px 6px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">แผนก/ฝ่าย</th>
-              <th style="width: 100px; text-align: left; padding: 7px 6px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">ตำแหน่ง</th>
-              <th style="text-align: left; padding: 7px 6px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">ความคาดหวัง</th>
-              <th style="text-align: left; padding: 7px 6px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">การปรับใช้</th>
+              <th style="width: 28px; text-align: center; padding: 7px 4px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">#</th>
+              <th style="width: 75px; text-align: left; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">รหัสพนักงาน</th>
+              <th style="width: 45px; text-align: left; padding: 7px 4px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">เพศ</th>
+              <th style="width: 130px; text-align: left; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">ชื่อ - นามสกุล</th>
+              <th style="width: 95px; text-align: left; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">แผนก/ฝ่าย</th>
+              <th style="width: 95px; text-align: left; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">ตำแหน่ง</th>
+              <th style="width: 175px; text-align: left; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">ความคาดหวัง</th>
+              <th style="width: 175px; text-align: left; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">การปรับใช้</th>
+              <th style="width: 80px; text-align: left; padding: 7px 5px; font-size: 10px; font-weight: 800; color: #334155; border-bottom: 2px solid #cbd5e1;">หมายเหตุ</th>
             </tr>
           </thead>
           <tbody>

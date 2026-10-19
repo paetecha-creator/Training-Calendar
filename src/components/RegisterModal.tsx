@@ -310,7 +310,6 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
           submissionDate: submissionDateStr,
         };
 
-        localStorage.setItem('training_session_reg', JSON.stringify(sessionData));
         onRegistrationSuccess(sessionData);
       } else {
         setErrorMsg(res.error || (lang === 'th' ? 'เกิดข้อผิดพลาดในการลงทะเบียน กรุณาลองใหม่อีกครั้ง' : 'Registration error occurred.'));
@@ -411,6 +410,7 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                       <th className="p-2">{t.colPosition}</th>
                       <th className="p-2">{t.colExpectation}</th>
                       <th className="p-2">{t.colApplication}</th>
+                      <th className="p-2">{t.colRemark}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -423,8 +423,15 @@ export const RegisterModal: React.FC<RegisterModalProps> = ({
                         </td>
                         <td className="p-2 text-slate-600">{a.dept || '-'}</td>
                         <td className="p-2 text-slate-600">{a.pos || '-'}</td>
-                        <td className="p-2 text-slate-600">{a.expectation || a.exp || '-'}</td>
-                        <td className="p-2 text-slate-600">{a.application || a.app || '-'}</td>
+                        <td className="p-2 text-slate-600">
+                          {a.expectation || a.exp || (a as any)['Expectation'] || (a as any)['ความคาดหวัง'] || '-'}
+                        </td>
+                        <td className="p-2 text-slate-600">
+                          {a.application || a.app || (a as any)['Application'] || (a as any)['การปรับใช้'] || '-'}
+                        </td>
+                        <td className="p-2 text-slate-500">
+                          {a.remark || a.rem || (a as any)['Remark'] || (a as any)['เพิ่มเติม'] || '-'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
