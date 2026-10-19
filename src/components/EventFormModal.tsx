@@ -26,7 +26,6 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [status, setStatus] = useState<string>('ไม่ต้องลงทะเบียน');
-  const [formSheet, setFormSheet] = useState<string>('');
   const [openDate, setOpenDate] = useState('');
   const [closeDate, setCloseDate] = useState('');
   const [location, setLocation] = useState('');
@@ -42,7 +41,6 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       setStartTime(event.startTime || '');
       setEndTime(event.endTime || '');
       setStatus(event.status || 'ไม่ต้องลงทะเบียน');
-      setFormSheet(event.formSheet || '');
       setOpenDate(event.openDate || '');
       setCloseDate(event.closeDate || '');
       setLocation(event.location || '');
@@ -57,7 +55,6 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       setStartTime('09:00');
       setEndTime('16:00');
       setStatus('ไม่ต้องลงทะเบียน');
-      setFormSheet('');
       setOpenDate('');
       setCloseDate('');
       setLocation('');
@@ -95,7 +92,6 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
       description: description.trim(),
       color,
       status,
-      formSheet,
       openDate,
       closeDate,
     });
@@ -239,39 +235,19 @@ export const EventFormModal: React.FC<EventFormModalProps> = ({
               <span>การตั้งค่าการลงทะเบียน (Registration Settings)</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
-                  สถานะการลงทะเบียน (Status)
-                </label>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value)}
-                  className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
-                >
-                  <option value="ไม่ต้องลงทะเบียน">ไม่ต้องลงทะเบียน (No Registration)</option>
-                  <option value="เปิด">เปิด (Open)</option>
-                  <option value="ปิด">ปิด (Closed)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
-                  ชีตบันทึกข้อมูล (Form Sheet)
-                </label>
-                <select
-                  value={formSheet}
-                  onChange={(e) => setFormSheet(e.target.value)}
-                  className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none font-mono"
-                >
-                  <option value="">- ไม่ใช้ฟอร์ม -</option>
-                  <option value="Register-1">Register-1</option>
-                  <option value="Register-2">Register-2</option>
-                  <option value="Register-3">Register-3</option>
-                  <option value="Register-4">Register-4</option>
-                  <option value="Register-5">Register-5</option>
-                </select>
-              </div>
+            <div>
+              <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+                สถานะการลงทะเบียน (Status)
+              </label>
+              <select
+                value={status}
+                onChange={(e) => setStatus(e.target.value)}
+                className="w-full text-xs font-medium p-2 bg-white border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/20 outline-none"
+              >
+                <option value="ไม่ต้องลงทะเบียน">ไม่ต้องลงทะเบียน (No Registration)</option>
+                <option value="เปิด">เปิด (Open)</option>
+                <option value="ปิด">ปิด (Closed)</option>
+              </select>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

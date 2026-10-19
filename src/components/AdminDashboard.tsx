@@ -67,29 +67,45 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'registrations' | 'courses' | 'holidays'>('registrations');
 
-  // Course selection for registrations tab
-  const onlyCourses = useMemo(() => events.filter((e) => e.isEvent), [events]);
+  // All courses
+  const onlyCourses: TrainingEvent[] = useMemo(() => events.filter((e: TrainingEvent) => e.isEvent), [events]);
+
+  // Course selection for registrations tab: only courses with status "เปิด" or "ปิด"
+  const registrationCourses: TrainingEvent[] = useMemo(() => {
+    return onlyCourses.filter((e: TrainingEvent) => e.status === 'เปิด' || e.status === 'ปิด');
+  }, [onlyCourses]);
+
   const [selectedCourseId, setSelectedCourseId] = useState<string>(() => {
-    return onlyCourses[0]?.id || 'EVT-1001';
+    const firstCourse = onlyCourses.find((e: TrainingEvent) => e.status === 'เปิด' || e.status === 'ปิด');
+    return firstCourse?.id || onlyCourses[0]?.id || 'EVT-1001';
   });
 
-  // Course search query in registrations tab
-  const [courseSearchQuery, setCourseSearchQuery] = useState('');
+  // Filters for registrations tab (Category & Status)
+  const [regCategoryFilter, setRegCategoryFilter] = useState('all');
+  const [regStatusFilter, setRegStatusFilter] = useState('all');
 
-  const filteredCoursesForRegistration = useMemo(() => {
-    if (!courseSearchQuery.trim()) return onlyCourses;
-    const q = courseSearchQuery.toLowerCase().trim();
-    return onlyCourses.filter(
-      (c) =>
-        c.title.toLowerCase().includes(q) ||
-        c.category.toLowerCase().includes(q) ||
-        (c.start && c.start.toLowerCase().includes(q)) ||
-        (c.status && c.status.toLowerCase().includes(q)) ||
-        (c.location && c.location.toLowerCase().includes(q)) ||
-        (c.description && c.description.toLowerCase().includes(q)) ||
-        (c.id && c.id.toLowerCase().includes(q))
-    );
-  }, [onlyCourses, courseSearchQuery]);
+  const registrationCategories = useMemo(() => {
+    const defaultCats = [
+      'Soft Skill Training',
+      'Technical Skills Training',
+      'HSE and ISO Training',
+      'Orientation',
+      'Other',
+    ];
+    const fromCourses = registrationCourses.map((c: TrainingEvent) => c.category).filter(Boolean);
+    return Array.from(new Set([...defaultCats, ...fromCourses]));
+  }, [registrationCourses]);
+
+  const filteredCoursesForRegistration: TrainingEvent[] = useMemo(() => {
+    let list = registrationCourses;
+    if (regCategoryFilter !== 'all') {
+      list = list.filter((c: TrainingEvent) => c.category === regCategoryFilter);
+    }
+    if (regStatusFilter !== 'all') {
+      list = list.filter((c: TrainingEvent) => c.status === regStatusFilter);
+    }
+    return list;
+  }, [registrationCourses, regCategoryFilter, regStatusFilter]);
 
   // Course search query and filters in courses management tab
   const [courseTabSearchQuery, setCourseTabSearchQuery] = useState('');
@@ -129,19 +145,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Selected course object
   const activeCourse = useMemo(() => {
-    return onlyCourses.find((c) => c.id === selectedCourseId) || onlyCourses[0] || null;
-  }, [onlyCourses, selectedCourseId]);
+    return (
+      filteredCoursesForRegistration.find((c) => c.id === selectedCourseId) ||
+      filteredCoursesForRegistration[0] ||
+      null
+    );
+  }, [filteredCoursesForRegistration, selectedCourseId]);
 
-  // Auto-select first matching course when search filters the list
+  // Auto-select first matching course when filter changes
   React.useEffect(() => {
-    if (courseSearchQuery.trim() && filteredCoursesForRegistration.length > 0) {
+    if (filteredCoursesForRegistration.length > 0) {
       const match = filteredCoursesForRegistration.some((c) => c.id === selectedCourseId);
       if (!match) {
         setSelectedCourseId(filteredCoursesForRegistration[0].id);
         setSelectedAttendeeIds(new Set());
       }
     }
-  }, [filteredCoursesForRegistration, courseSearchQuery, selectedCourseId]);
+  }, [filteredCoursesForRegistration, selectedCourseId]);
 
   // Attendees filtered by selected course
   const courseAttendees = useMemo(() => {
@@ -469,7 +489,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             }`}
           >
             <Users className="w-4 h-4" />
-            <span>{t.tabRegistrations} ({attendees.length})</span>
+            <span>{t.tabRegistrations}</span>
           </button>
 
           <button
@@ -553,33 +573,59 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* ========================================================= */}
       {activeTab === 'registrations' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {/* Course Selector & Controls */}
-          <div className="bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200/80 mb-3 shrink-0 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="flex items-center gap-3 flex-1 min-w-0 flex-wrap">
-              {/* Course Search Box */}
-              <div className="relative w-full sm:w-56 md:w-64 shrink-0">
-                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  placeholder={lang === 'th' ? 'ค้นหาหลักสูตร...' : 'Search course...'}
-                  value={courseSearchQuery}
-                  onChange={(e) => setCourseSearchQuery(e.target.value)}
-                  className="w-full pl-8.5 pr-8 py-2 text-xs font-medium bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] focus:ring-1 focus:ring-[#1e3a8a]/20 outline-none"
-                />
-                {courseSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setCourseSearchQuery('')}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-0.5"
-                    title={lang === 'th' ? 'ล้างการค้นหา' : 'Clear search'}
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
+          {/* Course Selector & Filter Controls (Horizontal single-row layout) */}
+          <div className="bg-slate-50 p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 mb-3 shrink-0 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+              {/* Filter by Category */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <label className="text-xs font-bold text-slate-600 whitespace-nowrap">
+                  {lang === 'th' ? 'หมวดหมู่:' : 'Category:'}
+                </label>
+                <select
+                  value={regCategoryFilter}
+                  onChange={(e) => setRegCategoryFilter(e.target.value)}
+                  className="px-2.5 py-1.5 text-xs font-semibold bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] outline-none text-slate-700 cursor-pointer shadow-2xs"
+                >
+                  <option value="all">{lang === 'th' ? 'ทั้งหมด' : 'All Categories'}</option>
+                  {registrationCategories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
               </div>
 
+              {/* Filter by Status */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                <label className="text-xs font-bold text-slate-600 whitespace-nowrap">
+                  {lang === 'th' ? 'สถานะ:' : 'Status:'}
+                </label>
+                <select
+                  value={regStatusFilter}
+                  onChange={(e) => setRegStatusFilter(e.target.value)}
+                  className="px-2.5 py-1.5 text-xs font-semibold bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] outline-none text-slate-700 cursor-pointer shadow-2xs"
+                >
+                  <option value="all">{lang === 'th' ? 'ทั้งหมด' : 'All Status'}</option>
+                  <option value="เปิด">{lang === 'th' ? 'เปิด' : 'Open'}</option>
+                  <option value="ปิด">{lang === 'th' ? 'ปิด' : 'Closed'}</option>
+                </select>
+              </div>
+
+              {(regCategoryFilter !== 'all' || regStatusFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRegCategoryFilter('all');
+                    setRegStatusFilter('all');
+                  }}
+                  className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer whitespace-nowrap px-1"
+                >
+                  {lang === 'th' ? 'ล้างตัวกรอง' : 'Reset'}
+                </button>
+              )}
+
               {/* Course Selector Dropdown */}
-              <div className="flex items-center gap-2 flex-1 min-w-[240px] max-w-lg">
+              <div className="flex items-center gap-2 flex-1 min-w-[240px] max-w-md">
                 <label className="text-xs font-bold text-slate-700 whitespace-nowrap">{t.selectCourseLabel}</label>
                 <div className="relative flex-1">
                   <select
@@ -588,11 +634,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       setSelectedCourseId(e.target.value);
                       setSelectedAttendeeIds(new Set());
                     }}
-                    className="w-full pl-3 pr-8 py-2 text-xs font-bold bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] focus:ring-1 focus:ring-[#1e3a8a]/20 outline-none appearance-none cursor-pointer truncate"
+                    className="w-full pl-3 pr-8 py-1.5 text-xs font-bold bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] focus:ring-1 focus:ring-[#1e3a8a]/20 outline-none appearance-none cursor-pointer truncate shadow-2xs"
                   >
                     {filteredCoursesForRegistration.length === 0 ? (
                       <option value="" disabled>
-                        {lang === 'th' ? 'ไม่พบหลักสูตรที่ตรงกับคำค้น' : 'No matching course'}
+                        {lang === 'th' ? 'ไม่พบหลักสูตรที่ตรงกับตัวกรอง' : 'No matching course'}
                       </option>
                     ) : (
                       filteredCoursesForRegistration.map((c) => {
@@ -631,7 +677,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         activeCourse.status === 'เปิด' ? 'ปิด' : 'เปิด'
                       )
                     }
-                    className="text-[11px] font-bold text-[#1e3a8a] hover:underline cursor-pointer px-2 py-1 bg-white rounded-lg border border-slate-200"
+                    className="text-[11px] font-bold text-[#1e3a8a] hover:underline cursor-pointer px-2 py-1 bg-white rounded-lg border border-slate-200 shadow-2xs"
                   >
                     {activeCourse.status === 'เปิด' ? t.toggleStatusToClose : t.toggleStatusToOpen}
                   </button>
@@ -640,9 +686,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             {/* Course Action Buttons */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
               <button
                 onClick={() => {
+                  if (!activeCourse) return;
                   setEditingAttendee(null);
                   setAttendeeForm({
                     code: '',
@@ -660,7 +707,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   });
                   setIsAttendeeModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs cursor-pointer transition-all"
+                disabled={!activeCourse}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs cursor-pointer transition-all disabled:opacity-40"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>{t.addAttendeeManualBtn}</span>
@@ -668,7 +716,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <button
                 onClick={handleExportExcel}
-                disabled={courseAttendees.length === 0}
+                disabled={!activeCourse || courseAttendees.length === 0}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-[#1e3a8a] bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl cursor-pointer transition-all disabled:opacity-40"
               >
                 <Download className="w-3.5 h-3.5" />
@@ -688,7 +736,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
               <button
                 onClick={handleClearCourseAttendees}
-                disabled={courseAttendees.length === 0 || isDeleting}
+                disabled={!activeCourse || courseAttendees.length === 0 || isDeleting}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-xl transition-all cursor-pointer disabled:opacity-40"
                 title="ล้างข้อมูลผู้ลงทะเบียนทั้งหมดของหลักสูตรนี้"
               >
