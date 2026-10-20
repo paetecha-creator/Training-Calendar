@@ -241,23 +241,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">{t.updateBtn}</span>
           </button>
 
-          {/* Admin Badge & Exit (Only shown when Administrator is active) */}
-          {isAdmin && (
-            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-bold text-slate-700 neu-inset-sm">
-              <span className="text-[#0f172a] font-bold">{t.adminRole}</span>
-              {user && (
-                <span className="text-[11px] text-slate-500 max-w-[80px] truncate hidden md:inline">
-                  ({user.displayName || user.email})
-                </span>
-              )}
-              <button
-                onClick={onExitAdmin}
-                className="text-xs text-[#1e3a8a] hover:text-rose-500 font-bold ml-0.5 cursor-pointer transition-colors"
-              >
-                {t.logout}
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </header>

@@ -136,6 +136,16 @@ export const translations = {
     holidayCategoryLabel: 'ประเภทวันหยุด (Category)',
     holidayDescLabel: 'คำอธิบายเพิ่มเติม (Description)',
     saveHolidayBtn: 'บันทึกวันหยุด',
+    batchUploadHolidayBtn: '+ อัปโหลดวันหยุดด้วย Excel',
+
+    // Batch Holiday Modal
+    batchHolidayModalTitle: 'สร้างและอัปเดตวันหยุดประจำปีด้วย Excel',
+    batchHolidayModalDesc: 'อัปโหลดไฟล์ Excel เพื่อเพิ่มหรืออัปเดตข้อมูลวันหยุดประจำปีพร้อมกัน',
+    downloadHolidayTemplateBtn: 'ดาวน์โหลดเทมเพลต Excel วันหยุด',
+    selectHolidayFileBtn: 'เลือกไฟล์ Excel วันหยุด (.xlsx)',
+    previewHolidaysCount: 'พบวันหยุดในไฟล์ทั้งหมด',
+    saveBatchHolidaysBtn: 'ยืนยันบันทึกวันหยุดทั้งหมดลงระบบ',
+    batchHolidaySaveSuccess: 'บันทึกวันหยุดลงระบบสำเร็จ',
   },
   en: {
     // Header
@@ -272,5 +282,15 @@ export const translations = {
     holidayCategoryLabel: 'Category',
     holidayDescLabel: 'Description',
     saveHolidayBtn: 'Save Holiday',
+    batchUploadHolidayBtn: '+ Batch Upload Holidays (Excel)',
+
+    // Batch Holiday Modal
+    batchHolidayModalTitle: 'Batch Create / Update Annual Holidays via Excel',
+    batchHolidayModalDesc: 'Upload an Excel file to create or update multiple annual holidays simultaneously',
+    downloadHolidayTemplateBtn: 'Download Holiday Excel Template',
+    selectHolidayFileBtn: 'Select Holiday Excel File (.xlsx)',
+    previewHolidaysCount: 'Total holidays found in file',
+    saveBatchHolidaysBtn: 'Confirm & Save All Holidays to System',
+    batchHolidaySaveSuccess: 'Holidays successfully imported and saved',
   },
 };

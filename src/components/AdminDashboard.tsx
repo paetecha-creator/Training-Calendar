@@ -14,6 +14,7 @@ import {
 import { exportAttendeesToExcel } from '../utils/excelHelper';
 import { HolidayFormModal } from './HolidayFormModal';
 import { BatchCourseUploadModal } from './BatchCourseUploadModal';
+import { BatchHolidayUploadModal } from './BatchHolidayUploadModal';
 import { translations } from '../utils/translations';
 import {
   Users,
@@ -207,6 +208,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Batch course upload modal state
   const [isBatchUploadModalOpen, setIsBatchUploadModalOpen] = useState(false);
+
+  // Batch holiday upload modal state
+  const [isBatchHolidayModalOpen, setIsBatchHolidayModalOpen] = useState(false);
 
   // Attendee edit/add modal state
   const [isAttendeeModalOpen, setIsAttendeeModalOpen] = useState(false);
@@ -454,27 +458,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </p>
           </div>
         </div>
-
-        {/* Real-time stats badges */}
-        <div className="flex items-center gap-2 flex-wrap text-xs font-bold">
-          <div className="neu-inset-sm px-3 py-1.5 rounded-xl flex items-center gap-1.5 bg-blue-50/50">
-            <BookOpen className="w-3.5 h-3.5 text-[#1e3a8a]" />
-            <span className="text-slate-600">{t.tabCourses}:</span>
-            <span className="text-[#1e3a8a] font-extrabold">{onlyCourses.length}</span>
-          </div>
-
-          <div className="neu-inset-sm px-3 py-1.5 rounded-xl flex items-center gap-1.5 bg-emerald-50/50">
-            <Users className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="text-slate-600">{t.tabRegistrations}:</span>
-            <span className="text-emerald-700 font-extrabold">{attendees.length}</span>
-          </div>
-
-          <div className="neu-inset-sm px-3 py-1.5 rounded-xl flex items-center gap-1.5 bg-rose-50/50">
-            <Sparkles className="w-3.5 h-3.5 text-rose-600" />
-            <span className="text-slate-600">{t.tabHolidays}:</span>
-            <span className="text-rose-700 font-extrabold">{holidays.length}</span>
-          </div>
-        </div>
       </div>
 
       {/* Tabs Switcher */}
@@ -518,29 +501,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         </div>
 
         {/* Global Tab Actions */}
-        <div className="flex items-center gap-2 flex-wrap">
-          {activeTab === 'courses' && (
-            <>
-              <button
-                onClick={onOpenNewEventModal}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:shadow-xs cursor-pointer transition-all"
-              >
-                <Plus className="w-4 h-4" />
-                <span>{t.createNewCourseBtn}</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  if (onOpenBatchCourseModal) onOpenBatchCourseModal();
-                  else setIsBatchUploadModalOpen(true);
-                }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 hover:shadow-xs cursor-pointer transition-all"
-              >
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                <span>{t.batchUploadCourseBtn}</span>
-              </button>
-            </>
-          )}
+        <div className="flex items-center gap-2">
 
           <button
             onClick={onRefresh}
@@ -687,33 +648,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Course Action Buttons */}
             <div className="flex items-center gap-2 flex-wrap shrink-0">
-              <button
-                onClick={() => {
-                  if (!activeCourse) return;
-                  setEditingAttendee(null);
-                  setAttendeeForm({
-                    code: '',
-                    sex: 'Mr.',
-                    fname: '',
-                    lname: '',
-                    dept: '',
-                    pos: '',
-                    expectation: '',
-                    application: '',
-                    remark: '',
-                    submitterName: 'Admin',
-                    submitterDept: 'HR / Training',
-                    submitterPhone: '-',
-                  });
-                  setIsAttendeeModalOpen(true);
-                }}
-                disabled={!activeCourse}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 rounded-xl shadow-xs cursor-pointer transition-all disabled:opacity-40"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{t.addAttendeeManualBtn}</span>
-              </button>
-
               <button
                 onClick={handleExportExcel}
                 disabled={!activeCourse || courseAttendees.length === 0}
@@ -917,17 +851,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {/* ========================================================= */}
       {activeTab === 'courses' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          {/* Course Search & Filter Bar in Tab 2 */}
-          <div className="bg-slate-50 p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 mb-3 shrink-0 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 flex-1 min-w-[280px] max-w-xl flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
+          {/* Course Search & Filter Bar in Tab 2 (Single horizontal plane) */}
+          <div className="bg-slate-50 p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 mb-3 shrink-0 flex items-center justify-between gap-3 overflow-x-auto">
+            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 flex-nowrap">
+              <div className="relative w-52 sm:w-60 md:w-72 shrink-0">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
-                  placeholder={lang === 'th' ? 'ค้นหาหลักสูตร (ชื่อ, หมวดหมู่, วันที่, สถานที่, วิทยากร)...' : 'Search courses (Title, Category, Date, Location)...'}
+                  placeholder={lang === 'th' ? 'ค้นหาหลักสูตร (ชื่อ, หมวดหมู่, วันที่)...' : 'Search courses (Title, Category, Date)...'}
                   value={courseTabSearchQuery}
                   onChange={(e) => setCourseTabSearchQuery(e.target.value)}
-                  className="w-full pl-8.5 pr-8 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] outline-none"
+                  className="w-full pl-8.5 pr-8 py-1.5 text-xs font-medium bg-white border border-slate-300 rounded-xl focus:border-[#1e3a8a] outline-none shadow-2xs"
                 />
                 {courseTabSearchQuery && (
                   <button
@@ -985,15 +919,36 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     setCourseTabStatusFilter('all');
                     setCourseTabSearchQuery('');
                   }}
-                  className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer whitespace-nowrap px-1"
+                  className="text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer whitespace-nowrap px-1 shrink-0"
                 >
                   {lang === 'th' ? 'ล้างตัวกรอง' : 'Reset'}
                 </button>
               )}
             </div>
 
-            <div className="text-xs text-slate-500 font-semibold shrink-0">
-              {lang === 'th' ? `แสดง ${filteredCoursesTab.length} จาก ${onlyCourses.length} หลักสูตร` : `Showing ${filteredCoursesTab.length} of ${onlyCourses.length} courses`}
+            <div className="flex items-center gap-2 shrink-0 flex-nowrap ml-auto">
+              <span className="text-xs text-slate-500 font-semibold shrink-0 whitespace-nowrap hidden sm:inline mr-1">
+                {lang === 'th' ? `แสดง ${filteredCoursesTab.length} จาก ${onlyCourses.length} หลักสูตร` : `Showing ${filteredCoursesTab.length} of ${onlyCourses.length} courses`}
+              </span>
+
+              <button
+                onClick={onOpenNewEventModal}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-[#1e3a8a] to-[#172554] hover:shadow-xs cursor-pointer whitespace-nowrap transition-all"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t.createNewCourseBtn}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (onOpenBatchCourseModal) onOpenBatchCourseModal();
+                  else setIsBatchUploadModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 hover:shadow-xs cursor-pointer whitespace-nowrap transition-all"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                <span>{t.batchUploadCourseBtn}</span>
+              </button>
             </div>
           </div>
 
@@ -1091,8 +1046,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       {activeTab === 'holidays' && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Header Action Bar for Holidays */}
-          <div className="bg-rose-50/70 p-3 sm:p-4 rounded-2xl border border-rose-200/80 mb-3 shrink-0 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
+          <div className="bg-rose-50/70 p-2.5 sm:p-3 rounded-2xl border border-rose-200/80 mb-3 shrink-0 flex items-center justify-between gap-3 overflow-x-auto">
+            <div className="flex items-center gap-2.5 shrink-0">
               <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-xs">
                 <Sparkles className="w-4 h-4" />
               </div>
@@ -1106,19 +1061,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-60">
+            <div className="flex items-center gap-2 shrink-0 flex-nowrap ml-auto">
+              <div className="relative w-48 sm:w-56 shrink-0">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   placeholder="ค้นหาวันหยุด..."
                   value={holidaySearchQuery}
                   onChange={(e) => setHolidaySearchQuery(e.target.value)}
-                  className="w-full pl-8.5 pr-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg outline-none focus:border-rose-500"
+                  className="w-full pl-8.5 pr-3 py-1.5 text-xs font-medium bg-white border border-slate-200 rounded-lg outline-none focus:border-rose-500 shadow-2xs"
                 />
               </div>
 
               <button
+                type="button"
+                onClick={() => setIsBatchHolidayModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-800 bg-rose-100/90 hover:bg-rose-200/90 border border-rose-300 rounded-xl cursor-pointer shadow-2xs whitespace-nowrap transition-all"
+                title="อัปโหลดวันหยุดหลายรายการพร้อมกันจากไฟล์ Excel"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-rose-600" />
+                <span>{t.batchUploadHolidayBtn}</span>
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   setEditingHoliday(null);
                   setIsHolidayModalOpen(true);
@@ -1220,6 +1186,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             type: 'success',
           });
           setTimeout(() => setStatusMessage(null), 3000);
+        }}
+      />
+
+      {/* Batch Holiday Upload Modal */}
+      <BatchHolidayUploadModal
+        isOpen={isBatchHolidayModalOpen}
+        lang={lang}
+        onClose={() => setIsBatchHolidayModalOpen(false)}
+        onSuccess={(count) => {
+          onRefresh();
+          setStatusMessage({
+            text: lang === 'th'
+              ? `นำเข้าและอัปเดตวันหยุดประจำปี ${count} วันสำเร็จเรียบร้อยแล้ว (Firebase Live)`
+              : `Successfully imported and saved ${count} holidays (Firebase Live)`,
+            type: 'success',
+          });
+          setTimeout(() => setStatusMessage(null), 3500);
         }}
       />
 

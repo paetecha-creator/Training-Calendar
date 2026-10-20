@@ -620,6 +620,39 @@ export async function deleteHolidayFromFirestore(holidayId: string): Promise<voi
   }
 }
 
+/**
+ * Batch save or update annual holidays in Firestore from Excel upload
+ */
+export async function saveBatchHolidaysToFirestore(
+  holidays: HolidayItem[]
+): Promise<{ count: number }> {
+  const path = 'holidays';
+  try {
+    const batch = writeBatch(db);
+    holidays.forEach((h) => {
+      const id = h.id || `HOL-${h.date}`;
+      const docRef = doc(db, path, id);
+      batch.set(
+        docRef,
+        {
+          id,
+          date: h.date,
+          name: h.name.trim(),
+          category: h.category || 'วันหยุดนักขัตฤกษ์',
+          description: h.description || '',
+          updatedAt: new Date().toISOString(),
+        },
+        { merge: true }
+      );
+    });
+    await batch.commit();
+    return { count: holidays.length };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
 // ==================== ATTENDEES & REGISTRATIONS ====================
 
 export interface AttendeeWithMeta extends AttendeeRow {

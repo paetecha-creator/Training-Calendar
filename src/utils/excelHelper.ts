@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { AttendeeRow, TrainingEvent, TrainingCategory } from '../types';
+import { AttendeeRow, TrainingEvent, TrainingCategory, HolidayItem } from '../types';
 import { CATEGORY_COLORS, getContrastColor } from '../services/firebaseService';
 
 // ==================== ATTENDEES EXCEL TEMPLATE & PARSER ====================
@@ -369,6 +369,128 @@ export async function parseCourseExcelUpload(file: File): Promise<TrainingEvent[
         }
 
         resolve(courses);
+      } catch (err) {
+        reject(err);
+      }
+    };
+    reader.onerror = (error) => reject(error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ==================== ANNUAL HOLIDAYS EXCEL TEMPLATE & PARSER ====================
+
+function normalizeExcelDate(val: string | number): string {
+  if (!val) return '';
+  if (typeof val === 'number') {
+    // Excel serial date to JS Date (25569 = Jan 1 1970)
+    const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+    const y = date.getUTCFullYear();
+    const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(date.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const str = String(val).trim();
+  // If YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+  // If DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  return str;
+}
+
+/**
+ * Generate and download holiday batch template Excel (.xlsx)
+ */
+export function generateAndDownloadHolidayTemplate() {
+  const headers = [
+    'Date (วันที่: YYYY-MM-DD) *',
+    'Holiday Name (ชื่อวันหยุด) *',
+    'Category (ประเภทวันหยุด)',
+    'Description (คำอธิบายเพิ่มเติม)',
+  ];
+
+  const sampleRows = [
+    ['2026-01-01', "วันขึ้นปีใหม่ (New Year's Day)", 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการและพนักงานบริษัท'],
+    ['2026-03-03', 'วันมาฆบูชา (Makha Bucha Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดทางศาสนา'],
+    ['2026-04-06', 'วันพระบาทสมเด็จพระพุทธยอดฟ้าจุฬาโลกมหาราชและวันที่ระลึกมหาจักรีบรมราชวงศ์ (Chakri Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการ'],
+    ['2026-04-13', 'วันสงกรานต์ (Songkran Festival)', 'วันหยุดตามประเพณี', 'เทศกาลปีใหม่ไทย'],
+    ['2026-04-14', 'วันสงกรานต์ (Songkran Festival)', 'วันหยุดตามประเพณี', 'เทศกาลปีใหม่ไทย'],
+    ['2026-04-15', 'วันสงกรานต์ (Songkran Festival)', 'วันหยุดตามประเพณี', 'เทศกาลปีใหม่ไทย'],
+    ['2026-05-01', 'วันแรงงานแห่งชาติ (National Labour Day)', 'วันหยุดตามประเพณี', 'วันหยุดผู้ใช้แรงงาน'],
+    ['2026-05-04', 'วันฉัตรมงคล (Coronation Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการ'],
+    ['2026-05-31', 'วันวิสาขบูชา (Visakha Bucha Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดทางศาสนา'],
+    ['2026-06-03', 'วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าฯ พระบรมราชินี', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการ'],
+    ['2026-07-28', 'วันเฉลิมพระชนมพรรษาพระบาทสมเด็จพระเจ้าอยู่หัว', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการ'],
+    ['2026-07-29', 'วันอาสาฬหบูชา (Asanha Bucha Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดทางศาสนา'],
+    ['2026-07-30', 'วันเข้าพรรษา (Buddhist Lent Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดทางศาสนา'],
+    ['2026-08-12', 'วันแม่แห่งชาติ / วันเฉลิมพระชนมพรรษาสมเด็จพระบรมราชชนนีพันปีหลวง', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการและวันแม่แห่งชาติ'],
+    ['2026-10-13', 'วันนวมินทรมหาราช (King Bhumibol Adulyadej The Great Memorial Day)', 'วันหยุดนักขัตฤกษ์', 'วันคล้ายวันสวรรคต ร.9'],
+    ['2026-10-23', 'วันปิยมหาราช (Chulalongkorn Day)', 'วันหยุดนักขัตฤกษ์', 'วันคล้ายวันสวรรคต ร.5'],
+    ['2026-12-05', 'วันพ่อแห่งชาติ / วันชาติ', 'วันหยุดนักขัตฤกษ์', 'วันคล้ายวันพระบรมราชสมภพ ร.9'],
+    ['2026-12-10', 'วันรัฐธรรมนูญ (Constitution Day)', 'วันหยุดนักขัตฤกษ์', 'วันระลึกการมีรัฐธรรมนูญ'],
+    ['2026-12-31', "วันสิ้นปี (New Year's Eve)", 'วันหยุดนักขัตฤกษ์', 'วันหยุดส่งท้ายปีเก่า'],
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+
+  ws['!cols'] = [
+    { wch: 26 },
+    { wch: 45 },
+    { wch: 25 },
+    { wch: 40 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Holidays_Template');
+  XLSX.writeFile(wb, 'Annual_Holidays_Template.xlsx');
+}
+
+/**
+ * Parse uploaded holidays Excel file into HolidayItem objects
+ */
+export async function parseHolidayExcelUpload(file: File): Promise<HolidayItem[]> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[firstSheetName];
+        const rawRows: Array<Array<string | number>> = XLSX.utils.sheet_to_json(worksheet, {
+          header: 1,
+          defval: '',
+        });
+
+        const holidays: HolidayItem[] = [];
+
+        // Skip header at index 0
+        for (let i = 1; i < rawRows.length; i++) {
+          const row = rawRows[i];
+          const isEmpty = row.every((val) => String(val).trim() === '');
+          if (isEmpty) continue;
+
+          const date = normalizeExcelDate(row[0]);
+          const name = String(row[1] || '').trim();
+          if (!date || !name) continue;
+
+          const category = String(row[2] || 'วันหยุดนักขัตฤกษ์').trim() || 'วันหยุดนักขัตฤกษ์';
+          const description = String(row[3] || '').trim();
+
+          holidays.push({
+            id: `HOL-${date}`,
+            date,
+            name,
+            category,
+            description,
+          });
+        }
+
+        resolve(holidays);
       } catch (err) {
         reject(err);
       }
