@@ -172,6 +172,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     );
   }, [attendees, activeCourse]);
 
+  // Summary of attendees by department for the active course
+  const departmentCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    courseAttendees.forEach((a) => {
+      const deptName = (a.dept || '').trim() || (lang === 'th' ? 'ไม่ระบุแผนก' : 'Unspecified');
+      counts[deptName] = (counts[deptName] || 0) + 1;
+    });
+
+    return Object.entries(counts)
+      .map(([dept, count]) => ({ dept, count }))
+      .sort((a, b) => b.count - a.count || a.dept.localeCompare(b.dept));
+  }, [courseAttendees, lang]);
+
   // Search query in attendees
   const [attendeeSearchQuery, setAttendeeSearchQuery] = useState('');
   const filteredCourseAttendees = useMemo(() => {
@@ -842,6 +855,102 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 )}
               </tbody>
             </table>
+          </div>
+
+          {/* Department Registration Summary (Bottom of Table) */}
+          <div className="mt-2.5 p-3 rounded-xl bg-slate-50 border border-slate-200/90 shrink-0 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 mb-2 border-b border-slate-200/60">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-blue-100 text-[#1e3a8a] flex items-center justify-center shrink-0">
+                  <Building className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800 tracking-tight flex items-center gap-1.5">
+                    <span>{lang === 'th' ? 'สรุปจำนวนผู้ลงทะเบียนแยกตามแผนก' : 'Department Registration Breakdown'}</span>
+                    <span className="text-[10px] text-slate-400 font-semibold">({departmentCounts.length} {lang === 'th' ? 'แผนก' : 'departments'})</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-500 font-medium truncate max-w-md">
+                    {lang === 'th'
+                      ? `หลักสูตร: ${activeCourse ? activeCourse.title : '-'}`
+                      : `Course: ${activeCourse ? activeCourse.title : '-'}`}
+                  </p>
+                </div>
+              </div>
+
+              {departmentCounts.length > 0 && (
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  {attendeeSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setAttendeeSearchQuery('')}
+                      className="text-[11px] font-bold text-rose-600 hover:text-rose-700 hover:underline cursor-pointer"
+                    >
+                      {lang === 'th' ? 'ล้างตัวกรองแผนก' : 'Clear filter'}
+                    </button>
+                  )}
+                  <div className="text-[11px] font-bold text-slate-700 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-2xs">
+                    {lang === 'th' ? 'รวมทั้งหมด' : 'Total'}:{' '}
+                    <span className="text-[#1e3a8a] font-extrabold">{courseAttendees.length}</span> {t.personsCountSuffix}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Department Badges / Chips */}
+            {departmentCounts.length === 0 ? (
+              <div className="text-xs text-slate-400 font-medium py-1.5 text-center">
+                {lang === 'th' ? 'ยังไม่มีข้อมูลผู้ลงทะเบียนในหลักสูตรนี้' : 'No registered attendees in this course yet'}
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-center gap-2 max-h-28 overflow-y-auto pr-1">
+                {departmentCounts.map(({ dept, count }) => {
+                  const percent = courseAttendees.length > 0
+                    ? Math.round((count / courseAttendees.length) * 100)
+                    : 0;
+                  const isFiltered = attendeeSearchQuery.toLowerCase() === dept.toLowerCase();
+
+                  return (
+                    <button
+                      type="button"
+                      key={dept}
+                      onClick={() => {
+                        if (isFiltered) {
+                          setAttendeeSearchQuery('');
+                        } else {
+                          setAttendeeSearchQuery(dept);
+                        }
+                      }}
+                      title={lang === 'th' ? `คลิกเพื่อกรองเฉพาะแผนก ${dept}` : `Click to filter by ${dept}`}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                        isFiltered
+                          ? 'bg-[#1e3a8a] text-white border-[#1e3a8a] shadow-xs ring-2 ring-blue-300'
+                          : 'bg-white text-slate-800 border-slate-200/90 hover:border-[#1e3a8a]/50 hover:bg-slate-50 shadow-2xs'
+                      }`}
+                    >
+                      <span className="font-bold">{dept}</span>
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`px-2 py-0.5 rounded-md text-[11px] font-extrabold ${
+                            isFiltered
+                              ? 'bg-white/20 text-white'
+                              : 'bg-blue-50 text-[#1e3a8a] border border-blue-200/80'
+                          }`}
+                        >
+                          {count} {t.personsCountSuffix}
+                        </span>
+                        <span
+                          className={`text-[10px] font-semibold ${
+                            isFiltered ? 'text-blue-200' : 'text-slate-400'
+                          }`}
+                        >
+                          ({percent}%)
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
