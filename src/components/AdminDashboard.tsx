@@ -1178,11 +1178,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <BatchCourseUploadModal
         isOpen={isBatchUploadModalOpen}
         lang={lang}
+        currentCourses={onlyCourses}
         onClose={() => setIsBatchUploadModalOpen(false)}
         onSuccess={() => {
           onRefresh();
           setStatusMessage({
-            text: 'นำเข้าและอัปเดตหลักสูตรทั้งหมดสำเร็จเรียบร้อยแล้ว (Firebase Live)',
+            text: 'นำเข้าและแทนที่ข้อมูลหลักสูตรทั้งหมดสำเร็จเรียบร้อยแล้ว (Firebase Live)',
             type: 'success',
           });
           setTimeout(() => setStatusMessage(null), 3000);
@@ -1193,13 +1194,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       <BatchHolidayUploadModal
         isOpen={isBatchHolidayModalOpen}
         lang={lang}
+        currentHolidays={holidays}
         onClose={() => setIsBatchHolidayModalOpen(false)}
         onSuccess={(count) => {
           onRefresh();
           setStatusMessage({
             text: lang === 'th'
-              ? `นำเข้าและอัปเดตวันหยุดประจำปี ${count} วันสำเร็จเรียบร้อยแล้ว (Firebase Live)`
-              : `Successfully imported and saved ${count} holidays (Firebase Live)`,
+              ? `นำเข้าและแทนที่ข้อมูลวันหยุดประจำปี ${count} วันสำเร็จเรียบร้อยแล้ว (Firebase Live)`
+              : `Successfully synced and replaced ${count} holidays (Firebase Live)`,
             type: 'success',
           });
           setTimeout(() => setStatusMessage(null), 3500);

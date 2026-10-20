@@ -121,12 +121,12 @@ export const translations = {
 
     // Batch Course Modal
     batchCourseModalTitle: 'สร้างและอัปเดตหลักสูตรพร้อมกันด้วย Excel',
-    batchCourseModalDesc: 'อัปโหลดไฟล์ Excel เพื่อเพิ่มหรืออัปเดตข้อมูลหลายหลักสูตรพร้อมกัน',
-    downloadCourseTemplateBtn: 'ดาวน์โหลดเทมเพลต Excel หลักสูตร',
+    batchCourseModalDesc: 'อัปโหลดไฟล์ Excel เพื่ออัปเดตหรือแทนที่ข้อมูลหลักสูตรทั้งหมดพร้อมกัน',
+    downloadCourseTemplateBtn: 'ดาวน์โหลดข้อมูลหลักสูตรปัจจุบัน (.xlsx)',
     selectCourseFileBtn: 'เลือกไฟล์ Excel หลักสูตร (.xlsx)',
     previewCoursesCount: 'พบหลักสูตรในไฟล์ทั้งหมด',
-    saveBatchCoursesBtn: 'ยืนยันบันทึกหลักสูตรทั้งหมดลงระบบ',
-    batchSaveSuccess: 'บันทึกหลักสูตรลงระบบสำเร็จ',
+    saveBatchCoursesBtn: 'ยืนยันบันทึกแทนที่หลักสูตรทั้งหมดลงระบบ',
+    batchSaveSuccess: 'บันทึกแทนที่ข้อมูลหลักสูตรลงระบบสำเร็จ',
 
     // Holiday Modal
     addHolidayModalTitle: 'เพิ่มข้อมูลวันหยุดประจำปี',
@@ -140,12 +140,12 @@ export const translations = {
 
     // Batch Holiday Modal
     batchHolidayModalTitle: 'สร้างและอัปเดตวันหยุดประจำปีด้วย Excel',
-    batchHolidayModalDesc: 'อัปโหลดไฟล์ Excel เพื่อเพิ่มหรืออัปเดตข้อมูลวันหยุดประจำปีพร้อมกัน',
-    downloadHolidayTemplateBtn: 'ดาวน์โหลดเทมเพลต Excel วันหยุด',
+    batchHolidayModalDesc: 'อัปโหลดไฟล์ Excel เพื่ออัปเดตหรือแทนที่ข้อมูลวันหยุดประจำปีทั้งหมดพร้อมกัน',
+    downloadHolidayTemplateBtn: 'ดาวน์โหลดข้อมูลวันหยุดปัจจุบัน (.xlsx)',
     selectHolidayFileBtn: 'เลือกไฟล์ Excel วันหยุด (.xlsx)',
     previewHolidaysCount: 'พบวันหยุดในไฟล์ทั้งหมด',
-    saveBatchHolidaysBtn: 'ยืนยันบันทึกวันหยุดทั้งหมดลงระบบ',
-    batchHolidaySaveSuccess: 'บันทึกวันหยุดลงระบบสำเร็จ',
+    saveBatchHolidaysBtn: 'ยืนยันบันทึกแทนที่วันหยุดทั้งหมดลงระบบ',
+    batchHolidaySaveSuccess: 'บันทึกแทนที่ข้อมูลวันหยุดลงระบบสำเร็จ',
   },
   en: {
     // Header
@@ -267,12 +267,12 @@ export const translations = {
 
     // Batch Course Modal
     batchCourseModalTitle: 'Batch Create / Update Courses via Excel',
-    batchCourseModalDesc: 'Upload an Excel file to create or update multiple courses simultaneously',
-    downloadCourseTemplateBtn: 'Download Course Excel Template',
+    batchCourseModalDesc: 'Upload an Excel file to update or replace all courses simultaneously',
+    downloadCourseTemplateBtn: 'Download Current Courses (.xlsx)',
     selectCourseFileBtn: 'Select Course Excel File (.xlsx)',
     previewCoursesCount: 'Total courses found in file',
-    saveBatchCoursesBtn: 'Confirm & Save All Courses to System',
-    batchSaveSuccess: 'Courses successfully imported and saved',
+    saveBatchCoursesBtn: 'Confirm & Replace All Courses in System',
+    batchSaveSuccess: 'Courses successfully synced and replaced',
 
     // Holiday Modal
     addHolidayModalTitle: 'Add Annual Holiday',
@@ -286,11 +286,11 @@ export const translations = {
 
     // Batch Holiday Modal
     batchHolidayModalTitle: 'Batch Create / Update Annual Holidays via Excel',
-    batchHolidayModalDesc: 'Upload an Excel file to create or update multiple annual holidays simultaneously',
-    downloadHolidayTemplateBtn: 'Download Holiday Excel Template',
+    batchHolidayModalDesc: 'Upload an Excel file to update or replace all annual holidays simultaneously',
+    downloadHolidayTemplateBtn: 'Download Current Holidays (.xlsx)',
     selectHolidayFileBtn: 'Select Holiday Excel File (.xlsx)',
     previewHolidaysCount: 'Total holidays found in file',
-    saveBatchHolidaysBtn: 'Confirm & Save All Holidays to System',
-    batchHolidaySaveSuccess: 'Holidays successfully imported and saved',
+    saveBatchHolidaysBtn: 'Confirm & Replace All Holidays in System',
+    batchHolidaySaveSuccess: 'Holidays successfully synced and replaced',
   },
 };

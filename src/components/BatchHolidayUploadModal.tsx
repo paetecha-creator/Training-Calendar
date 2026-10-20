@@ -21,6 +21,7 @@ interface BatchHolidayUploadModalProps {
   onClose: () => void;
   lang?: Language;
   onSuccess: (count: number) => void;
+  currentHolidays?: HolidayItem[];
 }
 
 export const BatchHolidayUploadModal: React.FC<BatchHolidayUploadModalProps> = ({
@@ -28,6 +29,7 @@ export const BatchHolidayUploadModal: React.FC<BatchHolidayUploadModalProps> = (
   onClose,
   lang = 'th',
   onSuccess,
+  currentHolidays = [],
 }) => {
   const t = translations[lang] || translations.th;
   const [parsedHolidays, setParsedHolidays] = useState<HolidayItem[]>([]);
@@ -128,31 +130,34 @@ export const BatchHolidayUploadModal: React.FC<BatchHolidayUploadModalProps> = (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-rose-50/40 p-4 rounded-xl border border-rose-200/70">
             <div className="space-y-1.5">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                {lang === 'th' ? 'ขั้นตอนที่ 1: เตรียมไฟล์ข้อมูล' : 'Step 1: Download Sample File'}
+                {lang === 'th' ? 'ขั้นตอนที่ 1: เตรียมไฟล์ข้อมูล' : 'Step 1: Download Current Data'}
               </span>
               <p className="text-xs text-slate-600 font-medium">
                 {lang === 'th'
-                  ? 'ดาวน์โหลดเทมเพลต Excel วันหยุดประจำปีที่มีตัวอย่างวันหยุดมาตรฐานครบถ้วน'
-                  : 'Download the official Excel template containing sample Thai national & company holidays.'}
+                  ? 'ดาวน์โหลดข้อมูลวันหยุดประจำปีทั้งหมดปัจจุบันจากระบบ เพื่อนำไปแก้ไขหรือเพิ่มข้อมูลใหม่'
+                  : 'Download all existing holidays from the system into Excel to edit or add new ones.'}
               </p>
               <button
                 type="button"
-                onClick={() => generateAndDownloadHolidayTemplate()}
+                onClick={() => generateAndDownloadHolidayTemplate(currentHolidays)}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-rose-700 bg-white hover:bg-rose-50 border border-rose-300 cursor-pointer shadow-xs transition-all mt-2"
               >
                 <Download className="w-4 h-4 text-rose-600" />
-                <span>{t.downloadHolidayTemplateBtn}</span>
+                <span>
+                  {t.downloadHolidayTemplateBtn}
+                  {currentHolidays && currentHolidays.length > 0 ? ` (${currentHolidays.length})` : ''}
+                </span>
               </button>
             </div>
 
             <div className="space-y-1.5 sm:border-l sm:border-rose-200 sm:pl-4">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                {lang === 'th' ? 'ขั้นตอนที่ 2: อัปโหลดไฟล์ Excel' : 'Step 2: Upload Excel File'}
+                {lang === 'th' ? 'ขั้นตอนที่ 2: อัปโหลดแทนที่ข้อมูลเดิม' : 'Step 2: Upload & Replace Data'}
               </span>
               <p className="text-xs text-slate-600 font-medium">
                 {lang === 'th'
-                  ? 'เลือกไฟล์ Excel วันหยุด (.xlsx) ที่กรอกข้อมูลเสร็จเรียบร้อยแล้ว'
-                  : 'Select your populated Excel file (.xlsx) with holiday schedules.'}
+                  ? 'เลือกไฟล์ Excel วันหยุด (.xlsx) ที่อัปเดตแล้ว ข้อมูลใหม่จะแทนที่ข้อมูลวันหยุดเดิมทั้งหมดเพื่อป้องกันข้อมูลซ้ำซ้อน'
+                  : 'Select your populated Excel file (.xlsx). The uploaded data will replace current holiday records to prevent duplicates.'}
               </p>
               <div className="mt-2 flex items-center gap-2">
                 <input

@@ -621,31 +621,44 @@ export async function deleteHolidayFromFirestore(holidayId: string): Promise<voi
 }
 
 /**
- * Batch save or update annual holidays in Firestore from Excel upload
+ * Batch save and replace annual holidays in Firestore from Excel upload
+ * Replaces existing holidays to prevent duplicates as requested
  */
 export async function saveBatchHolidaysToFirestore(
   holidays: HolidayItem[]
 ): Promise<{ count: number }> {
   const path = 'holidays';
   try {
-    const batch = writeBatch(db);
-    holidays.forEach((h) => {
-      const id = h.id || `HOL-${h.date}`;
-      const docRef = doc(db, path, id);
-      batch.set(
-        docRef,
-        {
+    // 1. Fetch and delete existing holidays to replace completely and prevent duplicates
+    const existingSnap = await getDocs(collection(db, path));
+    const deleteRefs = existingSnap.docs.map((d) => d.ref);
+
+    for (let i = 0; i < deleteRefs.length; i += 400) {
+      const chunk = deleteRefs.slice(i, i + 400);
+      const batch = writeBatch(db);
+      chunk.forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+
+    // 2. Insert all new holidays from uploaded Excel
+    for (let i = 0; i < holidays.length; i += 400) {
+      const chunk = holidays.slice(i, i + 400);
+      const batch = writeBatch(db);
+      chunk.forEach((h) => {
+        const id = h.id || `HOL-${h.date}`;
+        const docRef = doc(db, path, id);
+        batch.set(docRef, {
           id,
           date: h.date,
           name: h.name.trim(),
           category: h.category || 'วันหยุดนักขัตฤกษ์',
           description: h.description || '',
           updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    });
-    await batch.commit();
+        });
+      });
+      await batch.commit();
+    }
+
     return { count: holidays.length };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -698,26 +711,44 @@ export function subscribeAttendees(
 }
 
 /**
- * Batch save or update courses in Firestore from Excel upload
+ * Batch save and replace courses in Firestore from Excel upload
+ * Replaces existing courses to prevent duplicates as requested
  */
 export async function saveBatchCoursesToFirestore(
   courses: TrainingEvent[]
 ): Promise<{ count: number }> {
   const path = 'events';
   try {
-    const batch = writeBatch(db);
-    courses.forEach((c) => {
-      const docRef = doc(db, path, c.id);
-      batch.set(
-        docRef,
-        {
+    // 1. Fetch existing course documents and delete to replace completely
+    const existingSnap = await getDocs(collection(db, path));
+    const deleteRefs = existingSnap.docs
+      .filter((d) => {
+        const data = d.data();
+        return data.isHoliday !== true;
+      })
+      .map((d) => d.ref);
+
+    for (let i = 0; i < deleteRefs.length; i += 400) {
+      const chunk = deleteRefs.slice(i, i + 400);
+      const batch = writeBatch(db);
+      chunk.forEach((ref) => batch.delete(ref));
+      await batch.commit();
+    }
+
+    // 2. Insert all new courses from uploaded Excel
+    for (let i = 0; i < courses.length; i += 400) {
+      const chunk = courses.slice(i, i + 400);
+      const batch = writeBatch(db);
+      chunk.forEach((c) => {
+        const docRef = doc(db, path, c.id);
+        batch.set(docRef, {
           ...c,
           updatedAt: new Date().toISOString(),
-        },
-        { merge: true }
-      );
-    });
-    await batch.commit();
+        });
+      });
+      await batch.commit();
+    }
+
     return { count: courses.length };
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);

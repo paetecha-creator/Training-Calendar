@@ -23,6 +23,7 @@ interface BatchCourseUploadModalProps {
   onClose: () => void;
   lang?: Language;
   onSuccess: (count: number) => void;
+  currentCourses?: TrainingEvent[];
 }
 
 export const BatchCourseUploadModal: React.FC<BatchCourseUploadModalProps> = ({
@@ -30,6 +31,7 @@ export const BatchCourseUploadModal: React.FC<BatchCourseUploadModalProps> = ({
   onClose,
   lang = 'th',
   onSuccess,
+  currentCourses = [],
 }) => {
   const t = translations[lang] || translations.th;
   const [parsedCourses, setParsedCourses] = useState<TrainingEvent[]>([]);
@@ -130,27 +132,34 @@ export const BatchCourseUploadModal: React.FC<BatchCourseUploadModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 bg-slate-50 p-4 rounded-xl border border-slate-200">
             <div className="space-y-1.5">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                ขั้นตอนที่ 1: เตรียมไฟล์ข้อมูล
+                {lang === 'th' ? 'ขั้นตอนที่ 1: เตรียมไฟล์ข้อมูล' : 'Step 1: Download Current Data'}
               </span>
               <p className="text-xs text-slate-600 font-medium">
-                ดาวน์โหลดเทมเพลต Excel ที่จัดเตรียมไว้ แล้วกรอกข้อมูลหลักสูตรที่ต้องการ
+                {lang === 'th'
+                  ? 'ดาวน์โหลดข้อมูลหลักสูตรทั้งหมดปัจจุบันจากระบบ เพื่อนำไปแก้ไขหรือเพิ่มข้อมูลใหม่'
+                  : 'Download all existing courses from the system into Excel to edit or add new ones.'}
               </p>
               <button
                 type="button"
-                onClick={() => generateAndDownloadCourseTemplate()}
+                onClick={() => generateAndDownloadCourseTemplate(currentCourses)}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-[#1e3a8a] bg-white hover:bg-blue-50 border border-blue-200 cursor-pointer shadow-xs transition-all mt-2"
               >
                 <Download className="w-4 h-4 text-[#1e3a8a]" />
-                <span>{t.downloadCourseTemplateBtn}</span>
+                <span>
+                  {t.downloadCourseTemplateBtn}
+                  {currentCourses && currentCourses.length > 0 ? ` (${currentCourses.length})` : ''}
+                </span>
               </button>
             </div>
 
             <div className="space-y-1.5 sm:border-l sm:border-slate-200 sm:pl-4">
               <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                ขั้นตอนที่ 2: อัปโหลดไฟล์ Excel
+                {lang === 'th' ? 'ขั้นตอนที่ 2: อัปโหลดแทนที่ข้อมูลเดิม' : 'Step 2: Upload & Replace Data'}
               </span>
               <p className="text-xs text-slate-600 font-medium">
-                เลือกไฟล์ Excel (.xlsx) ที่กรอกข้อมูลเสร็จแล้วเพื่อนำเข้าสู่ระบบ
+                {lang === 'th'
+                  ? 'เลือกไฟล์ Excel (.xlsx) ที่อัปเดตแล้ว ข้อมูลใหม่จะแทนที่ข้อมูลเดิมทั้งหมดเพื่อป้องกันข้อมูลซ้ำซ้อน'
+                  : 'Select your updated Excel (.xlsx). The uploaded data will replace current records to prevent duplicates.'}
               </p>
               <label className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 cursor-pointer shadow-xs transition-all mt-2 w-fit">
                 <Upload className="w-4 h-4" />

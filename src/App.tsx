@@ -575,13 +575,14 @@ export default function App() {
       <BatchCourseUploadModal
         isOpen={isBatchCourseModalOpen}
         lang={lang}
+        currentCourses={courses.filter((c) => !c.isHoliday)}
         onClose={() => setIsBatchCourseModalOpen(false)}
         onSuccess={(count) => {
           setSyncStatus({
             text:
               lang === 'th'
-                ? `นำเข้าและอัปเดตหลักสูตรสำเร็จ ${count} หลักสูตร (Firebase Live)`
-                : `Successfully uploaded and synced ${count} courses (Firebase Live)`,
+                ? `นำเข้าและแทนที่ข้อมูลหลักสูตรสำเร็จ ${count} หลักสูตร (Firebase Live)`
+                : `Successfully synced and replaced ${count} courses (Firebase Live)`,
             type: 'success',
           });
           setTimeout(() => setSyncStatus(null), 3000);

@@ -20,43 +20,7 @@ export function generateAndDownloadTemplate() {
     'Remark (เพิ่มเติม)',
   ];
 
-  const sampleRows = [
-    [
-      '9579',
-      'Mr.',
-      'Promrin',
-      'Srisang',
-      'ENG / PTE',
-      'Chief Technician',
-      'เรียนรู้แนวทางการบริหารทีมและความฉลาดทางอารมณ์',
-      'นำไปปรับใช้ในการวางแผนงานและประสานงานระหว่างแผนก',
-      '-',
-    ],
-    [
-      '12894',
-      'Mr.',
-      'Saravut',
-      'Vohra',
-      'ENG / PTE',
-      'Sr.Technician',
-      'เพิ่มทักษะการตัดสินใจและการสื่อสารในสถานการณ์กดดัน',
-      'ประยุกต์ใช้ในการแก้ปัญหาหน้างานจริง',
-      '-',
-    ],
-    [
-      '9544',
-      'Ms.',
-      'Jampa',
-      'Kamsri',
-      'PRD/TS1',
-      'Asst. General Manager',
-      'พัฒนาภาวะผู้นำเชิงกลยุทธ์',
-      'นำไปใช้โค้ชชิ่งและพัฒนาผู้ใต้บังคับบัญชา',
-      '-',
-    ],
-  ];
-
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+  const ws = XLSX.utils.aoa_to_sheet([headers]);
 
   ws['!cols'] = [
     { wch: 18 },
@@ -207,9 +171,9 @@ export function exportAttendeesToExcel(attendees: AttendeeRow[], courseTitle: st
 // ==================== BATCH COURSES TEMPLATE & PARSER ====================
 
 /**
- * Download Excel template for batch creating/updating courses
+ * Download Excel containing all currently existing courses in the system
  */
-export function generateAndDownloadCourseTemplate() {
+export function generateAndDownloadCourseTemplate(currentCourses?: TrainingEvent[]) {
   const headers = [
     'Course ID (รหัสหลักสูตร เช่น EVT-1001 หรือเว้นว่างเพื่อสร้างใหม่)',
     'Category (หมวดหมู่)',
@@ -226,55 +190,25 @@ export function generateAndDownloadCourseTemplate() {
     'Close Date (วันปิดรับ YYYY-MM-DD)',
   ];
 
-  const sampleRows = [
-    [
-      'EVT-1006',
-      'Soft Skill Training',
-      'Problem Solving & Critical Thinking in Manufacturing',
-      '2026-11-12',
-      '2026-11-12',
-      '09:00',
-      '16:30',
-      'Training Room 1 & Virtual MS Teams',
-      'การคิดวิเคราะห์เชิงวิพากษ์และการแก้ปัญหาหน้างานอย่างเป็นระบบด้วยเทคนิค 5-Why และ Fishbone Diagram',
-      'เปิด',
-      'Register-5',
-      '2026-10-25',
-      '2026-11-08',
-    ],
-    [
-      '',
-      'Technical Skills Training',
-      'Total Productive Maintenance (TPM) Principles',
-      '2026-11-18',
-      '2026-11-19',
-      '08:30',
-      '16:00',
-      'Engineering Workshop & Floor',
-      'หลักการบำรุงรักษาทวีผลที่ทุกคนมีส่วนร่วม เพื่อเพิ่มประสิทธิภาพ OEE และลดการหยุดชะงักของเครื่องจักร',
-      'เปิด',
-      'Register-6',
-      '2026-11-01',
-      '2026-11-15',
-    ],
-    [
-      '',
-      'HSE and ISO Training',
-      'Chemical Safety & Emergency Spill Response',
-      '2026-11-26',
-      '2026-11-26',
-      '13:00',
-      '16:00',
-      'Auditorium Building A',
-      'การจัดการสารเคมีอันตรายอย่างปลอดภัยตามมาตรฐานความปลอดภัย พร้อมการฝึกซ้อมระงับเหตุฉุกเฉิน',
-      'เปิด',
-      'Register-7',
-      '2026-11-05',
-      '2026-11-22',
-    ],
-  ];
+  const dataRows = (currentCourses || [])
+    .filter((c) => !c.isHoliday)
+    .map((c) => [
+      c.id,
+      c.category,
+      c.title,
+      c.start,
+      c.end || c.start,
+      c.startTime || '09:00',
+      c.endTime || '16:00',
+      c.location || '',
+      c.description || '',
+      c.status || 'เปิด',
+      c.formSheet || '',
+      c.openDate || '',
+      c.closeDate || '',
+    ]);
 
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
 
   ws['!cols'] = [
     { wch: 22 },
@@ -293,9 +227,11 @@ export function generateAndDownloadCourseTemplate() {
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Courses_Template');
-  XLSX.writeFile(wb, 'Training_Courses_Batch_Template.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, 'Courses');
+  XLSX.writeFile(wb, `Training_Courses_Current_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
+
+export const exportCurrentCoursesToExcel = generateAndDownloadCourseTemplate;
 
 /**
  * Parse uploaded courses Excel file into TrainingEvent objects
@@ -403,9 +339,9 @@ function normalizeExcelDate(val: string | number): string {
 }
 
 /**
- * Generate and download holiday batch template Excel (.xlsx)
+ * Generate and download holiday Excel containing current system holidays (.xlsx)
  */
-export function generateAndDownloadHolidayTemplate() {
+export function generateAndDownloadHolidayTemplate(currentHolidays?: HolidayItem[]) {
   const headers = [
     'Date (วันที่: YYYY-MM-DD) *',
     'Holiday Name (ชื่อวันหยุด) *',
@@ -413,29 +349,14 @@ export function generateAndDownloadHolidayTemplate() {
     'Description (คำอธิบายเพิ่มเติม)',
   ];
 
-  const sampleRows = [
-    ['2026-01-01', "วันขึ้นปีใหม่ (New Year's Day)", 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการและพนักงานบริษัท'],
-    ['2026-03-03', 'วันมาฆบูชา (Makha Bucha Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดทางศาสนา'],
-    ['2026-04-06', 'วันพระบาทสมเด็จพระพุทธยอดฟ้าจุฬาโลกมหาราชและวันที่ระลึกมหาจักรีบรมราชวงศ์ (Chakri Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการ'],
-    ['2026-04-13', 'วันสงกรานต์ (Songkran Festival)', 'วันหยุดตามประเพณี', 'เทศกาลปีใหม่ไทย'],
-    ['2026-04-14', 'วันสงกรานต์ (Songkran Festival)', 'วันหยุดตามประเพณี', 'เทศกาลปีใหม่ไทย'],
-    ['2026-04-15', 'วันสงกรานต์ (Songkran Festival)', 'วันหยุดตามประเพณี', 'เทศกาลปีใหม่ไทย'],
-    ['2026-05-01', 'วันแรงงานแห่งชาติ (National Labour Day)', 'วันหยุดตามประเพณี', 'วันหยุดผู้ใช้แรงงาน'],
-    ['2026-05-04', 'วันฉัตรมงคล (Coronation Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการ'],
-    ['2026-05-31', 'วันวิสาขบูชา (Visakha Bucha Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดทางศาสนา'],
-    ['2026-06-03', 'วันเฉลิมพระชนมพรรษาสมเด็จพระนางเจ้าฯ พระบรมราชินี', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการ'],
-    ['2026-07-28', 'วันเฉลิมพระชนมพรรษาพระบาทสมเด็จพระเจ้าอยู่หัว', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการ'],
-    ['2026-07-29', 'วันอาสาฬหบูชา (Asanha Bucha Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดทางศาสนา'],
-    ['2026-07-30', 'วันเข้าพรรษา (Buddhist Lent Day)', 'วันหยุดนักขัตฤกษ์', 'วันหยุดทางศาสนา'],
-    ['2026-08-12', 'วันแม่แห่งชาติ / วันเฉลิมพระชนมพรรษาสมเด็จพระบรมราชชนนีพันปีหลวง', 'วันหยุดนักขัตฤกษ์', 'วันหยุดราชการและวันแม่แห่งชาติ'],
-    ['2026-10-13', 'วันนวมินทรมหาราช (King Bhumibol Adulyadej The Great Memorial Day)', 'วันหยุดนักขัตฤกษ์', 'วันคล้ายวันสวรรคต ร.9'],
-    ['2026-10-23', 'วันปิยมหาราช (Chulalongkorn Day)', 'วันหยุดนักขัตฤกษ์', 'วันคล้ายวันสวรรคต ร.5'],
-    ['2026-12-05', 'วันพ่อแห่งชาติ / วันชาติ', 'วันหยุดนักขัตฤกษ์', 'วันคล้ายวันพระบรมราชสมภพ ร.9'],
-    ['2026-12-10', 'วันรัฐธรรมนูญ (Constitution Day)', 'วันหยุดนักขัตฤกษ์', 'วันระลึกการมีรัฐธรรมนูญ'],
-    ['2026-12-31', "วันสิ้นปี (New Year's Eve)", 'วันหยุดนักขัตฤกษ์', 'วันหยุดส่งท้ายปีเก่า'],
-  ];
+  const dataRows = (currentHolidays || []).map((h) => [
+    h.date,
+    h.name,
+    h.category || 'วันหยุดนักขัตฤกษ์',
+    h.description || '',
+  ]);
 
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
 
   ws['!cols'] = [
     { wch: 26 },
@@ -445,9 +366,11 @@ export function generateAndDownloadHolidayTemplate() {
   ];
 
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Holidays_Template');
-  XLSX.writeFile(wb, 'Annual_Holidays_Template.xlsx');
+  XLSX.utils.book_append_sheet(wb, ws, 'Holidays');
+  XLSX.writeFile(wb, `Annual_Holidays_Current_${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
+
+export const exportCurrentHolidaysToExcel = generateAndDownloadHolidayTemplate;
 
 /**
  * Parse uploaded holidays Excel file into HolidayItem objects
