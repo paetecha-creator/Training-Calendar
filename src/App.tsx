@@ -34,7 +34,7 @@ const ALL_CATEGORIES: TrainingCategory[] = [
 ];
 
 export default function App() {
-  const [currentDate, setCurrentDate] = useState<Date>(new Date(2026, 9, 1));
+  const [currentDate, setCurrentDate] = useState<Date>(() => new Date());
   const [viewMode, setViewMode] = useState<'calendar' | 'list' | 'admin'>('calendar');
   const [courses, setCourses] = useState<TrainingEvent[]>([]);
   const [holidays, setHolidays] = useState<HolidayItem[]>([]);
